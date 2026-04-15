@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+playwright
+psycopg[binary]
+python-dotenv
+pydantic
+beautifulsoup4
+requests
+pandas
+scikit-learn
+spacy
+streamlit
+loguru

@@ -1,0 +1,1 @@
+# Scraper para Magneto365
