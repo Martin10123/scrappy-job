@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
 import time
 from datetime import datetime
+import re
 
 from app.logger import logger
 
@@ -17,7 +18,7 @@ class MagnetoScraper:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         })
 
-    def get_jobs(self, search_term: str = "desarrollador", location: str = "colombia", max_pages: int = 3) -> List[Dict]:
+    def get_jobs(self, search_term: str = "desarrollador", location: str = "colombia", max_pages: int = 5) -> List[Dict]:
         """
         Extrae ofertas de empleo de Magneto365
 
@@ -30,13 +31,14 @@ class MagnetoScraper:
             Lista de diccionarios con datos de las ofertas
         """
         jobs = []
+        max_pages = max(max_pages, 5)
 
         for page in range(1, max_pages + 1):
             try:
                 # URL correcta según el usuario
                 url = f"{self.base_url}/co/trabajos/buscar/{search_term}"
                 if page > 1:
-                    url += f"?page={page}"
+                    url += f"/pagina-{page}"
                 logger.info(f"Scrapeando página {page}: {url}")
 
                 response = self.session.get(url)
@@ -63,18 +65,29 @@ class MagnetoScraper:
 
     def _extract_jobs_from_page(self, soup: BeautifulSoup) -> List[Dict]:
         """Extrae las ofertas de una página específica"""
-        jobs = []
+        jobs: List[Dict] = []
+        seen_urls = set()
 
-        # Selector para tarjetas de ofertas basado en la inspección
-        # Buscar elementos con clase que contenga 'job_card' o 'card-jobs'
-        job_cards = soup.find_all('div', class_=lambda x: x and ('job_card' in x or 'card-jobs' in x or 'mg_job_card' in x))
+        # Tomar solo contenedores raíz de tarjeta para evitar duplicados por subcomponentes.
+        job_cards = soup.find_all(
+            "div",
+            class_=lambda x: x and "magneto-ui-card-jobs_container" in x,
+        )
 
-        logger.debug(f"Encontradas {len(job_cards)} tarjetas de ofertas")
+        logger.debug(f"Encontradas {len(job_cards)} tarjetas raíz de ofertas")
 
         for card in job_cards:
             try:
                 job_data = self._extract_job_data(card)
-                if job_data and job_data.get('title'):  # Solo si tiene título
+                if not job_data:
+                    continue
+
+                url = job_data.get("url")
+                if not url or url in seen_urls:
+                    continue
+
+                seen_urls.add(url)
+                if job_data.get('title'):
                     jobs.append(job_data)
             except Exception as e:
                 logger.exception(f"Error extrayendo job en tarjeta {card}")
@@ -85,14 +98,20 @@ class MagnetoScraper:
     def _extract_job_data(self, card) -> Optional[Dict]:
         """Extrae datos de una tarjeta de oferta individual"""
         try:
-            # Extraer título - buscar elementos con clase específica
+            # Extraer URL primero, para poder enriquecer desde la vista de detalle.
+            url_elem = card.find('a', href=lambda x: x and '/co/empleos/' in x)
+            url = url_elem['href'] if url_elem else None
+            if url and not url.startswith('http'):
+                url = self.base_url + url
+
+            # Extraer título.
             title_elem = card.find(class_=lambda x: x and 'text--big' in x and 'text--bold' in x)
             title = title_elem.get_text().strip() if title_elem else None
 
             # Buscar empresa y tipo de contrato en los elementos de texto
             company = None
             remote_type = None
-            text_elements = card.find_all(text=True, recursive=True)
+            text_elements = card.find_all(string=True, recursive=True)
             for text in text_elements:
                 text = text.strip()
                 # Buscar patrón "Empresa | Tipo contrato"
@@ -109,19 +128,14 @@ class MagnetoScraper:
 
             # Extraer ciudad/ubicación - buscar en elementos de texto
             city = None
-            text_elements = card.find_all(text=True, recursive=True)
             for text in text_elements:
                 text = text.strip()
                 # Buscar patrones de ciudad (ej: "Medellín", "Bogotá", etc.)
-                if any(city_name in text for city_name in ['Medellín', 'Bogotá', 'Cali', 'Barranquilla', 'Cartagena', 'Bucaramanga', 'Pereira', 'Manizales', 'Ibagué', 'Cúcuta']):
+                if text == title:
+                    continue
+                if any(city_name in text for city_name in ['Medellín', 'Bogotá', 'Cali', 'Barranquilla', 'Cartagena', 'Bucaramanga', 'Pereira', 'Manizales', 'Ibagué', 'Cúcuta', 'Sabaneta', 'Guarne', 'Envigado', 'Itagui']):
                     city = text
                     break
-
-            # Extraer URL - buscar enlaces
-            url_elem = card.find('a', href=lambda x: x and 'empleos' in x)
-            url = url_elem['href'] if url_elem else None
-            if url and not url.startswith('http'):
-                url = self.base_url + url
 
             # Extraer salario si existe
             salary_text = None
@@ -131,11 +145,29 @@ class MagnetoScraper:
                     salary_text = text
                     break
 
-            # Parsear salario básico (placeholder)
+            # Parsear salario básico
             salary_min = salary_max = currency = None
             if salary_text and '$' in salary_text:
-                # Aquí podríamos implementar parsing más sofisticado
+                numbers = re.findall(r"\d[\d\.]*", salary_text)
+                if numbers:
+                    salary_min = int(numbers[0].replace('.', ''))
                 currency = 'COP'
+
+            detail_data = self._extract_job_detail(url) if url else {}
+
+            # Priorizar datos de detalle cuando estén disponibles.
+            if detail_data.get("company"):
+                company = detail_data["company"]
+            if detail_data.get("remote_type"):
+                remote_type = detail_data["remote_type"]
+            if detail_data.get("city"):
+                city = detail_data["city"]
+            if detail_data.get("salary_min"):
+                salary_min = detail_data["salary_min"]
+            if detail_data.get("salary_max"):
+                salary_max = detail_data["salary_max"]
+            if detail_data.get("currency"):
+                currency = detail_data["currency"]
 
             return {
                 'source': 'magneto365',
@@ -147,10 +179,87 @@ class MagnetoScraper:
                 'salary_min': salary_min,
                 'salary_max': salary_max,
                 'currency': currency,
-                'published_at': datetime.now(),  # Placeholder
+                'description': detail_data.get('description'),
+                'skills': detail_data.get('skills'),
+                'published_at': detail_data.get('published_at', datetime.now()),
                 'scraped_at': datetime.now()
             }
 
         except Exception as e:
             logger.exception("Error extrayendo datos del job")
             return None
+
+    def _extract_job_detail(self, url: str) -> Dict:
+        """Extrae metadatos desde la página de detalle de una vacante."""
+        try:
+            response = self.session.get(url, timeout=20)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # Fecha de publicación: "Fecha de publicación YYYY-MM-DD"
+            published_at = None
+            publish_elem = soup.find(
+                "span",
+                class_=lambda x: x and "header_publish-date" in x,
+            )
+            if publish_elem:
+                date_match = re.search(r"(\d{4}-\d{2}-\d{2})", publish_elem.get_text(" ", strip=True))
+                if date_match:
+                    published_at = datetime.strptime(date_match.group(1), "%Y-%m-%d")
+
+            company = None
+            company_elem = soup.find("a", class_=lambda x: x and "header__company" in x)
+            if company_elem:
+                company = company_elem.get_text(" ", strip=True)
+
+            remote_type = None
+            contract_elem = soup.find("span", class_=lambda x: x and "contract-type" in x)
+            if contract_elem:
+                remote_type = contract_elem.get_text(" ", strip=True).lstrip("| ").strip()
+
+            city = None
+            summary_labels = soup.find_all("span", class_=lambda x: x and "summary_label" in x)
+            for label in summary_labels:
+                txt = label.get_text(" ", strip=True)
+                if any(city_name in txt for city_name in ["Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena", "Bucaramanga", "Pereira", "Sabaneta", "Guarne"]):
+                    city = txt
+                    break
+
+            salary_min = salary_max = None
+            currency = None
+            for label in summary_labels:
+                txt = label.get_text(" ", strip=True)
+                if "$" in txt:
+                    numbers = re.findall(r"\d[\d\.]*", txt)
+                    if numbers:
+                        salary_min = int(numbers[0].replace('.', ''))
+                        salary_max = salary_min
+                        currency = "COP"
+                    break
+
+            description = None
+            description_elem = soup.find("div", class_=lambda x: x and "JobOfferDetailContent_content" in x)
+            if description_elem:
+                description = description_elem.get_text("\n", strip=True)
+
+            skills: List[str] = []
+            skill_nodes = soup.find_all("span", class_=lambda x: x and "skill_name" in x)
+            for node in skill_nodes:
+                value = node.get_text(" ", strip=True)
+                if value:
+                    skills.append(value)
+
+            return {
+                "company": company,
+                "remote_type": remote_type,
+                "city": city,
+                "salary_min": salary_min,
+                "salary_max": salary_max,
+                "currency": currency,
+                "description": description,
+                "skills": skills or None,
+                "published_at": published_at,
+            }
+        except Exception:
+            logger.exception(f"No se pudo enriquecer detalle para URL: {url}")
+            return {}

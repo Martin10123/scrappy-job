@@ -32,10 +32,12 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
 @router.post("/scrape/{source}")
 def scrape_jobs(source: str, background_tasks: BackgroundTasks,
                 search_term: str = "desarrollador", location: str = "colombia",
-                max_pages: int = 3, db: Session = Depends(get_db)):
+                max_pages: int = 5, db: Session = Depends(get_db)):
     """
     Ejecutar scraping de ofertas desde una fuente específica
     """
+    max_pages = max(max_pages, 5)
+
     repository = JobRepository(db)
     scraping_service = ScrapingService(repository)
 

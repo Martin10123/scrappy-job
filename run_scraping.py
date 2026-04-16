@@ -27,7 +27,7 @@ def run_scraping():
             source='magneto365',
             search_term='desarrollador',
             location='colombia',
-            max_pages=2  # Solo 2 páginas para prueba
+            max_pages=5
         )
 
         print(f"✅ Scraping completado. {saved_count} ofertas guardadas.")

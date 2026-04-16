@@ -40,3 +40,11 @@ class JobRepository:
         self.session.refresh(job)
         logger.info(f"JobRepository: job guardado id={job.id} title={job.title}")
         return job
+
+    def update(self, job: Job) -> Job:
+        logger.debug(f"JobRepository: actualizando job id={job.id}")
+        self.session.add(job)
+        self.session.commit()
+        self.session.refresh(job)
+        logger.info(f"JobRepository: job actualizado id={job.id}")
+        return job

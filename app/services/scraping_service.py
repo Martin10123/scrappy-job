@@ -16,7 +16,7 @@ class ScrapingService:
         }
 
     def scrape_and_save_jobs(self, source: str, search_term: str = "desarrollador",
-                           location: str = "colombia", max_pages: int = 3) -> int:
+                           location: str = "colombia", max_pages: int = 5) -> int:
         """
         Scrape ofertas y las guarda en la base de datos
 
@@ -28,6 +28,7 @@ class ScrapingService:
             raise ValueError(f"Scraper no encontrado para source: {source}")
 
         scraper = self.scrapers[source]
+        max_pages = max(max_pages, 5)
         logger.info(f"Ejecutando scraper {source} para term='{search_term}' location='{location}' max_pages={max_pages}")
 
         # Obtener ofertas del scraper
@@ -40,7 +41,13 @@ class ScrapingService:
                 # Verificar si ya existe (por URL)
                 existing = self.repository.get_by_url(raw_job.get('url'))
                 if existing:
-                    logger.debug(f"Oferta ya existe: {raw_job.get('title')}")
+                    updated = self._merge_missing_fields(existing, raw_job)
+                    if updated:
+                        self.repository.update(existing)
+                        logger.info(f"Oferta existente enriquecida: {existing.title}")
+                        saved_count += 1
+                    else:
+                        logger.debug(f"Oferta ya existe sin cambios: {raw_job.get('title')}")
                     continue
 
                 # Crear objeto Job
@@ -49,6 +56,12 @@ class ScrapingService:
                     title=raw_job.get('title'),
                     company=raw_job.get('company'),
                     city=raw_job.get('city'),
+                    remote_type=raw_job.get('remote_type'),
+                    salary_min=raw_job.get('salary_min'),
+                    salary_max=raw_job.get('salary_max'),
+                    currency=raw_job.get('currency'),
+                    description=raw_job.get('description'),
+                    skills=raw_job.get('skills'),
                     url=raw_job.get('url'),
                     published_at=raw_job.get('published_at'),
                     scraped_at=raw_job.get('scraped_at', datetime.now())
@@ -64,6 +77,31 @@ class ScrapingService:
                 continue
 
         return saved_count
+
+    def _merge_missing_fields(self, existing: Job, raw_job: dict) -> bool:
+        """Completa campos vacios de una oferta existente con nueva data."""
+        updated = False
+        fields = [
+            "title",
+            "company",
+            "city",
+            "remote_type",
+            "salary_min",
+            "salary_max",
+            "currency",
+            "description",
+            "skills",
+            "published_at",
+        ]
+
+        for field in fields:
+            current_value = getattr(existing, field)
+            incoming_value = raw_job.get(field)
+            if (current_value is None or current_value == "") and incoming_value not in (None, ""):
+                setattr(existing, field, incoming_value)
+                updated = True
+
+        return updated
 
     def get_scraping_stats(self) -> dict:
         """Estadísticas del scraping"""
