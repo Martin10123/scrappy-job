@@ -4,6 +4,7 @@ from datetime import datetime
 from app.logger import logger
 from app.models.job import Job
 from app.repositories.job_repository import JobRepository
+from scrapers.computrabajo.scraper import ComputrabajoScraper
 from scrapers.magneto.scraper import MagnetoScraper
 
 class ScrapingService:
@@ -12,7 +13,8 @@ class ScrapingService:
     def __init__(self, repository: JobRepository):
         self.repository = repository
         self.scrapers = {
-            'magneto365': MagnetoScraper()
+            'magneto365': MagnetoScraper(),
+            'computrabajo': ComputrabajoScraper(),
         }
 
     def scrape_and_save_jobs(self, source: str, search_term: str = "desarrollador",

@@ -1,1 +1,3 @@
-# Scraper para Computrabajo
+from .scraper import ComputrabajoScraper
+
+__all__ = ["ComputrabajoScraper"]
