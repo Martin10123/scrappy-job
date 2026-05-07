@@ -23,3 +23,49 @@ class JobRead(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class JobListResponse(BaseModel):
+    total: int
+    limit: int
+    offset: int
+    items: List[JobRead]
+
+
+class ForecastPoint(BaseModel):
+    month: str
+    count: int
+
+
+class SkillForecast(BaseModel):
+    skill: str
+    history: List[ForecastPoint]
+    forecast: List[ForecastPoint]
+    total_observed: int
+    projected_total: int
+    growth_pct: Optional[float]
+
+
+class JobDemandForecastResponse(BaseModel):
+    generated_at: datetime
+    horizon_months: int
+    top_n: int
+    total_jobs_analyzed: int
+    skills: List[SkillForecast]
+
+
+class SkillForecastConfidence(BaseModel):
+    skill: str
+    train_points: int
+    test_points: int
+    mae: float
+    mape_pct: Optional[float]
+    confidence_level: str
+
+
+class JobForecastConfidenceResponse(BaseModel):
+    generated_at: datetime
+    top_n: int
+    test_horizon_months: int
+    total_jobs_analyzed: int
+    skills: List[SkillForecastConfidence]
