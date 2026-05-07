@@ -22,10 +22,11 @@ def run_scraping():
         repository = JobRepository(db)
         scraping_service = ScrapingService(repository)
 
-        # Ejecutar scraping
+        # Ejecutar scraping con múltiples términos
+        search_terms = ["desarrollador", "frontend", "backend", "python", "react"]
         saved_count = scraping_service.scrape_and_save_jobs(
             source='magneto365',
-            search_term='desarrollador',
+            search_term=search_terms,
             location='colombia',
             max_pages=5
         )

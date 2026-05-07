@@ -4,6 +4,7 @@ from typing import List, Dict, Optional
 import time
 from datetime import datetime
 import re
+from requests.exceptions import RequestException
 
 from app.logger import logger
 
@@ -18,49 +19,75 @@ class MagnetoScraper:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         })
 
-    def get_jobs(self, search_term: str = "desarrollador", location: str = "colombia", max_pages: int = 5) -> List[Dict]:
+    def get_jobs(self, search_term=None, location: str = "colombia", max_pages: int = 5) -> List[Dict]:
         """
         Extrae ofertas de empleo de Magneto365
 
         Args:
-            search_term: Término de búsqueda (ej: "desarrollador", "python")
+            search_term: Término(s) de búsqueda. Puede ser:
+                - str: Un único término (ej: "desarrollador")
+                - list: Múltiples términos (ej: ["desarrollador", "frontend", "backend"])
             location: Ubicación (ej: "colombia", "bogota")
-            max_pages: Número máximo de páginas a scrapear
+            max_pages: Número máximo de páginas a scrapear por término
 
         Returns:
             Lista de diccionarios con datos de las ofertas
         """
+        # Valores por defecto
+        if search_term is None:
+            search_term = ["desarrollador", "frontend", "backend", "python", "react", "java", "fullstack", "software"]
+        elif isinstance(search_term, str):
+            search_term = [search_term]
+        
         jobs = []
         max_pages = max(max_pages, 5)
+        seen_urls = set()
 
-        for page in range(1, max_pages + 1):
-            try:
-                # URL correcta según el usuario
-                url = f"{self.base_url}/co/trabajos/buscar/{search_term}"
-                if page > 1:
-                    url += f"/pagina-{page}"
-                logger.info(f"Scrapeando página {page}: {url}")
+        # Iterar sobre cada término de búsqueda
+        for term in search_term:
+            logger.info(f"🔍 Iniciando búsqueda para término: '{term}'")
+            
+            for page in range(1, max_pages + 1):
+                try:
+                    # URL correcta según el usuario
+                    url = f"{self.base_url}/co/trabajos/buscar/{term}"
+                    if page > 1:
+                        url += f"/pagina-{page}"
+                    logger.info(f"Scrapeando página {page}: {url}")
 
-                response = self.session.get(url)
-                response.raise_for_status()
+                    response = self.session.get(url)
+                    response.raise_for_status()
 
-                soup = BeautifulSoup(response.content, 'html.parser')
+                    soup = BeautifulSoup(response.content, 'html.parser')
 
-                # Extraer ofertas de la página
-                page_jobs = self._extract_jobs_from_page(soup)
-                jobs.extend(page_jobs)
+                    # Extraer ofertas de la página
+                    page_jobs = self._extract_jobs_from_page(soup)
+                    
+                    # Filtrar ofertas duplicadas por URL
+                    new_jobs = []
+                    for job in page_jobs:
+                        job_url = job.get("url")
+                        if job_url and job_url not in seen_urls:
+                            seen_urls.add(job_url)
+                            new_jobs.append(job)
+                    
+                    jobs.extend(new_jobs)
 
-                # Pausa entre requests para no ser bloqueado
-                time.sleep(2)
+                    # Pausa entre requests para no ser bloqueado
+                    time.sleep(2)
 
-                # Si no hay más ofertas en esta página, detener
-                if not page_jobs:
+                    # Si no hay más ofertas en esta página, detener
+                    if not page_jobs:
+                        break
+
+                except Exception as e:
+                    logger.exception(f"Error en página {page} del término '{term}'")
                     break
+            
+            # Pausa entre términos para no ser bloqueado
+            time.sleep(3)
 
-            except Exception as e:
-                logger.exception(f"Error en página {page}")
-                break
-
+        logger.info(f"✅ Scraping completado: {len(jobs)} ofertas únicas encontradas")
         return jobs
 
     def _extract_jobs_from_page(self, soup: BeautifulSoup) -> List[Dict]:
@@ -193,6 +220,11 @@ class MagnetoScraper:
         """Extrae metadatos desde la página de detalle de una vacante."""
         try:
             response = self.session.get(url, timeout=20)
+            if response.status_code >= 500:
+                logger.warning(
+                    f"Magneto devolvió HTTP {response.status_code} para detalle {url}; se omite enriquecimiento"
+                )
+                return {}
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -260,6 +292,9 @@ class MagnetoScraper:
                 "skills": skills or None,
                 "published_at": published_at,
             }
+        except RequestException as exc:
+            logger.warning(f"No se pudo enriquecer detalle para URL {url}: {exc}")
+            return {}
         except Exception:
-            logger.exception(f"No se pudo enriquecer detalle para URL: {url}")
+            logger.exception(f"Error parseando detalle para URL: {url}")
             return {}
