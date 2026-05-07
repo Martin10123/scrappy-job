@@ -12,3 +12,4 @@ scikit-learn
 spacy
 streamlit
 loguru
+playwwright
