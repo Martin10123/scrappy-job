@@ -41,6 +41,42 @@ _SKILL_ALIASES = {
     "xcode": "xcode",
 }
 
+_DISPLAY_SKILL_ALIASES = {
+    "trabajoenequipo": "Trabajo en equipo",
+    "comunicacionefectiva": "Comunicacion efectiva",
+    "comunicacinefectiva": "Comunicacion efectiva",
+    "resolucindeproblemas": "Resolucion de problemas",
+    "pensamientoanalitico": "Pensamiento analitico",
+    "aprendizajecontinuo": "Aprendizaje continuo",
+    "liderazgo": "Liderazgo",
+    "proactividad": "Proactividad",
+    "adaptacion": "Adaptacion",
+    "apirest": "API REST",
+    "nodejs": "Node.js",
+    "reactjs": "React.js",
+    "net": ".NET",
+}
+
+_SOFT_SKILL_KEYS = {
+    "trabajoenequipo",
+    "comunicacionefectiva",
+    "comunicacinefectiva",
+    "resolucindeproblemas",
+    "pensamientoanalitico",
+    "aprendizajecontinuo",
+    "liderazgo",
+    "proactividad",
+    "adaptacion",
+    "adaptabilidad",
+    "colaboracion",
+    "comunicacion",
+    "disciplina",
+    "orientacionallogro",
+    "orientacionalresultado",
+    "pensamientocritico",
+    "trabajoenequipo",
+}
+
 _REMOTE_KEYWORDS = {
     "remote": "remote",
     "remoto": "remote",
@@ -186,9 +222,13 @@ def normalize_skill(skill: object) -> str:
     if not isinstance(skill, str):
         return ""
 
-    clean = skill.strip().lower()
-    if not clean:
+    raw = skill.strip()
+    if not raw:
         return ""
+
+    # Conserva separacion de camelCase (ej: trabajoEnEquipo) antes de normalizar.
+    camel_spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", raw)
+    clean = _strip_accents(camel_spaced).lower()
 
     alias_key = re.sub(r"[^a-z0-9]+", " ", clean)
     alias_key = re.sub(r"\s+", " ", alias_key).strip()
@@ -202,6 +242,57 @@ def normalize_skill(skill: object) -> str:
     first = parts[0]
     rest = [part[:1].upper() + part[1:] for part in parts[1:]]
     return first + "".join(rest)
+
+
+def denormalize_skill(skill: str) -> str:
+    """Convierte un skill normalizado (camelCase) a formato legible con espacios.
+    
+    Ejemplos:
+        trabajoEnEquipo -> Trabajo en equipo
+        javascript -> Javascript
+        apiRest -> Api Rest
+    """
+    if not isinstance(skill, str) or not skill:
+        return skill
+
+    compact_key = re.sub(r"[^a-z0-9]+", "", _strip_accents(skill).lower())
+    if compact_key in _DISPLAY_SKILL_ALIASES:
+        return _DISPLAY_SKILL_ALIASES[compact_key]
+    
+    # Buscar el skill en los aliases para obtener el nombre original
+    for original, normalized in _SKILL_ALIASES.items():
+        if normalized == skill:
+            words = original.split()
+            if not words:
+                return skill
+            return words[0].capitalize() + (" " + " ".join(word.lower() for word in words[1:]) if len(words) > 1 else "")
+    
+    # Si no esta en aliases, convertir camelCase a formato legible.
+    result = re.sub(r'([a-z])([A-Z])', r'\1 \2', skill)
+    words = result.split()
+    if not words:
+        return skill
+    return words[0].capitalize() + (" " + " ".join(word.lower() for word in words[1:]) if len(words) > 1 else "")
+
+
+def format_skill(skill: object) -> str:
+    normalized_skill = normalize_skill(skill)
+    if not normalized_skill:
+        return ""
+    return denormalize_skill(normalized_skill)
+
+
+def is_soft_skill(skill: object) -> bool:
+    normalized_skill = normalize_skill(skill)
+    if not normalized_skill:
+        return False
+
+    compact_key = re.sub(r"[^a-z0-9]+", "", _strip_accents(normalized_skill).lower())
+    return compact_key in _SOFT_SKILL_KEYS
+
+
+def skill_category(skill: object) -> str:
+    return "soft" if is_soft_skill(skill) else "technical"
 
 
 def detect_work_mode(city: Optional[str], contract_type: Optional[str]) -> Optional[str]:

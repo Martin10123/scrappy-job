@@ -53,6 +53,8 @@ class JobDemandForecastResponse(BaseModel):
     horizon_months: int
     top_n: int
     total_jobs_analyzed: int
+    technical_skills: List[SkillForecast]
+    soft_skills: List[SkillForecast]
     skills: List[SkillForecast]
 
 
@@ -70,4 +72,6 @@ class JobForecastConfidenceResponse(BaseModel):
     top_n: int
     test_horizon_months: int
     total_jobs_analyzed: int
+    technical_skills: List[SkillForecastConfidence]
+    soft_skills: List[SkillForecastConfidence]
     skills: List[SkillForecastConfidence]

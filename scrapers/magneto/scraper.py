@@ -197,9 +197,13 @@ class MagnetoScraper:
             if detail_data.get("currency"):
                 currency = detail_data["currency"]
 
-            location_text = normalize_location_text(city)
+            location_text = normalize_location_text(detail_data.get("location_text") or city)
             normalized_city = extract_city_from_location(location_text) or city
-            work_mode = detect_work_mode(location_text, contract_type)
+            work_mode = (
+                detail_data.get("work_mode")
+                or detect_work_mode(location_text, contract_type)
+                or detect_work_mode(detail_data.get("description"), None)
+            )
 
             return {
                 'source': 'magneto365',
@@ -257,43 +261,73 @@ class MagnetoScraper:
                 contract_type = contract_elem.get_text(" ", strip=True).lstrip("| ").strip()
 
             city = None
+            work_mode = None
+            salary_min = salary_max = None
+            currency = None
+            
             summary_labels = soup.find_all("span", class_=lambda x: x and "summary_label" in x)
             for label in summary_labels:
                 txt = label.get_text(" ", strip=True)
-                if any(city_name in txt for city_name in ["Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena", "Bucaramanga", "Pereira", "Sabaneta", "Guarne"]):
+                
+                # Extraer ciudad
+                if not city and any(city_name in txt for city_name in ["Bogotá", "Medellín", "Cali", "Barranquilla", "Cartagena", "Bucaramanga", "Pereira", "Sabaneta", "Guarne", "Envigado", "Montería", "Cereté"]):
                     city = txt
-                    break
-
-            salary_min = salary_max = None
-            currency = None
-            for label in summary_labels:
-                txt = label.get_text(" ", strip=True)
-                if "$" in txt:
+                
+                # Extraer modalidad de trabajo
+                if not work_mode:
+                    lower_txt = txt.lower()
+                    if any(keyword in lower_txt for keyword in ["remoto", "remote", "teletrabajo", "hibrido", "hybrid", "presencial", "onsite", "office"]):
+                        work_mode = detect_work_mode(txt, None)
+                
+                # Extraer salario
+                if not salary_min and "$" in txt:
                     numbers = re.findall(r"\d[\d\.]*", txt)
                     if numbers:
                         salary_min = int(numbers[0].replace('.', ''))
                         salary_max = salary_min
                         currency = "COP"
-                    break
 
             description = None
             description_elem = soup.find("div", class_=lambda x: x and "JobOfferDetailContent_content" in x)
             if description_elem:
                 description = description_elem.get_text("\n", strip=True)
+                
+                # Si no encontró work_mode, intentar extraerlo de la descripción
+                if not work_mode:
+                    work_mode = detect_work_mode(description, None)
 
+            # Extraer skills - buscar múltiples selectores posibles
             skills: List[str] = []
+            
+            # Intenta selector original
             skill_nodes = soup.find_all("span", class_=lambda x: x and "skill_name" in x)
             for node in skill_nodes:
                 value = node.get_text(" ", strip=True)
                 if value:
                     skills.append(value)
+            
+            # Si no encontró skills, intenta buscar en tags con atributos de datos
+            if not skills:
+                skill_nodes = soup.find_all("span", {"data-skill": True})
+                for node in skill_nodes:
+                    value = node.get_text(" ", strip=True)
+                    if value:
+                        skills.append(value)
+            
+            # Última opción: buscar etiquetas de habilidades comunes en el HTML
+            if not skills:
+                skill_divs = soup.find_all("div", class_=lambda x: x and "skill" in x.lower())
+                for div in skill_divs:
+                    value = div.get_text(" ", strip=True)
+                    if value and len(value) < 50:  # Heurística para filtrar descripciones largas
+                        skills.append(value)
 
             return {
                 "company": company,
                 "contract_type": contract_type,
                 "city": city,
                 "location_text": normalize_location_text(city),
-                "work_mode": detect_work_mode(city, contract_type),
+                "work_mode": work_mode,
                 "salary_min": salary_min,
                 "salary_max": salary_max,
                 "currency": currency,

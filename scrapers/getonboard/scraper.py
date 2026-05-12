@@ -237,21 +237,50 @@ class GetOnBoardScraper:
             if company_elem:
                 company = company_elem.get_text(strip=True)
 
-            # Extraer ubicación
+            # Extraer ubicación y modalidad de trabajo
             location_text = None
             city = None
+            work_mode = None
+            
+            # Buscar elemento de ubicación (jobLocation)
             location_elem = soup.find(attrs={"itemprop": "address"})
             if location_elem:
                 location_text = normalize_location_text(location_elem.get_text(" ", strip=True))
                 city = extract_city_from_location(location_text)
+            
+            # Extraer modalidad de trabajo de diferentes fuentes en GetOnBoard
+            # 1. Buscar en el elemento jobLocation que puede contener "(Remoto)", "(Híbrido)", etc.
+            job_location = soup.find(attrs={"itemprop": "jobLocation"})
+            if job_location and not work_mode:
+                location_full_text = job_location.get_text(" ", strip=True)
+                work_mode = detect_work_mode(location_full_text, None)
+            
+            # 2. Buscar específicamente span con ícono de wifi (significa Remoto)
+            if not work_mode:
+                wifi_icon = soup.find("i", class_=lambda x: x and "icon-wifi" in x if x else False)
+                if wifi_icon:
+                    parent = wifi_icon.find_parent()
+                    if parent:
+                        text = parent.get_text(" ", strip=True).lower()
+                        if "remoto" in text or "remote" in text:
+                            work_mode = "remote"
+            
+            # 3. Buscar en location-tooltip-content que puede contener info de modalidad
+            if not work_mode:
+                tooltip = soup.find(class_=lambda x: x and "location-tooltip-content" in x if x else False)
+                if tooltip:
+                    tooltip_text = tooltip.get_text(" ", strip=True)
+                    work_mode = detect_work_mode(tooltip_text, None)
 
             # Extraer tipo de empleo/contrato
             employment_type = None
             employment_elem = soup.find(attrs={"itemprop": "employmentType"})
             if employment_elem:
                 employment_type = employment_elem.get("content", employment_elem.get_text(strip=True))
-
-            work_mode = detect_work_mode(location_text, employment_type)
+            
+            # Fallback: si aún no hay work_mode, usar el método anterior
+            if not work_mode:
+                work_mode = detect_work_mode(location_text, employment_type)
 
             # Extraer salario
             salary_min = salary_max = currency = None

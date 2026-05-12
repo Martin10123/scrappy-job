@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from app.logger import logger
 from app.models.job import Job
 from app.repositories.job_repository import JobRepository
-from app.services.job_normalizer import detect_work_mode, normalize_skills
+from app.services.job_normalizer import detect_work_mode, format_skill, normalize_skills, skill_category
 
 class JobService:
     def __init__(self, repository: JobRepository):
@@ -73,7 +73,8 @@ class JobService:
         )
         seniority_counter = Counter(job.seniority for job in jobs if job.seniority)
 
-        skill_counter = Counter()
+        technical_skill_counter = Counter()
+        soft_skill_counter = Counter()
         salary_mins = []
         salary_maxs = []
         monthly_counter = Counter()
@@ -82,8 +83,14 @@ class JobService:
             if isinstance(job.skills, list):
                 for skill in job.skills:
                     normalized = normalize_skills([skill])
-                    if normalized:
-                        skill_counter[normalized[0]] += 1
+                    if not normalized:
+                        continue
+
+                    display_skill = format_skill(normalized[0])
+                    if skill_category(normalized[0]) == "soft":
+                        soft_skill_counter[display_skill] += 1
+                    else:
+                        technical_skill_counter[display_skill] += 1
 
             if job.salary_min is not None:
                 salary_mins.append(job.salary_min)
@@ -101,7 +108,9 @@ class JobService:
             "contract_type_distribution": dict(contract_counter.most_common(top_n)),
             "work_mode_distribution": dict(work_mode_counter.most_common(top_n)),
             "seniority_distribution": dict(seniority_counter.most_common(top_n)),
-            "top_skills": dict(skill_counter.most_common(top_n)),
+            "technical_skills": dict(technical_skill_counter.most_common(top_n)),
+            "soft_skills": dict(soft_skill_counter.most_common(top_n)),
+            "top_skills": dict(technical_skill_counter.most_common(top_n)),
             "salary": {
                 "avg_salary_min": round(mean(salary_mins), 2) if salary_mins else None,
                 "avg_salary_max": round(mean(salary_maxs), 2) if salary_maxs else None,
@@ -120,69 +129,18 @@ class JobService:
     ) -> Dict[str, object]:
         jobs = self.repository.get_all_filtered_for_analytics(source=source, city=city)
 
-        skill_monthly_counter: Dict[str, Counter] = {}
-
-        for job in jobs:
-            date_ref = job.published_at or job.scraped_at
-            if not date_ref:
-                continue
-
-            month_key = date_ref.strftime("%Y-%m")
-            skills = self._normalize_skills(job.skills)
-            if not skills:
-                continue
-
-            for skill in skills:
-                if skill not in skill_monthly_counter:
-                    skill_monthly_counter[skill] = Counter()
-                skill_monthly_counter[skill][month_key] += 1
-
-        ranked_skills = sorted(
-            skill_monthly_counter.items(),
-            key=lambda item: sum(item[1].values()),
-            reverse=True,
-        )[:top_n]
-
-        skills_forecast = []
-        for skill, monthly_counts in ranked_skills:
-            months = sorted(monthly_counts.keys())
-            observed_values = [int(monthly_counts[month]) for month in months]
-
-            predicted_values = self._forecast_linear(observed_values, months_ahead)
-            next_months = self._next_months(months[-1], months_ahead)
-
-            history = [{"month": month, "count": int(monthly_counts[month])} for month in months]
-            forecast = [
-                {"month": month, "count": int(round(max(value, 0.0)))}
-                for month, value in zip(next_months, predicted_values)
-            ]
-
-            observed_total = sum(point["count"] for point in history)
-            projected_total = sum(point["count"] for point in forecast)
-
-            baseline = observed_values[-1] if observed_values else 0
-            projected_last = forecast[-1]["count"] if forecast else 0
-            growth_pct = None
-            if baseline > 0:
-                growth_pct = round(((projected_last - baseline) / baseline) * 100.0, 2)
-
-            skills_forecast.append(
-                {
-                    "skill": skill,
-                    "history": history,
-                    "forecast": forecast,
-                    "total_observed": observed_total,
-                    "projected_total": projected_total,
-                    "growth_pct": growth_pct,
-                }
-            )
+        technical_counter, soft_counter = self._build_skill_monthly_counters_by_category(jobs)
+        technical_skills = self._build_skill_forecast_series(technical_counter, top_n, months_ahead)
+        soft_skills = self._build_skill_forecast_series(soft_counter, top_n, months_ahead)
 
         return {
             "generated_at": datetime.utcnow(),
             "horizon_months": months_ahead,
             "top_n": top_n,
             "total_jobs_analyzed": len(jobs),
-            "skills": skills_forecast,
+            "technical_skills": technical_skills,
+            "soft_skills": soft_skills,
+            "skills": technical_skills,
         }
 
     def get_forecast_confidence(
@@ -193,56 +151,18 @@ class JobService:
         test_horizon_months: int = 2,
     ) -> Dict[str, object]:
         jobs = self.repository.get_all_filtered_for_analytics(source=source, city=city)
-        skill_monthly_counter = self._build_skill_monthly_counter(jobs)
-
-        ranked_skills = sorted(
-            skill_monthly_counter.items(),
-            key=lambda item: sum(item[1].values()),
-            reverse=True,
-        )[:top_n]
-
-        results = []
-        for skill, monthly_counts in ranked_skills:
-            months = sorted(monthly_counts.keys())
-            values = [int(monthly_counts[month]) for month in months]
-
-            max_test = min(test_horizon_months, max(len(values) - 1, 0))
-            if max_test <= 0:
-                continue
-
-            train_values = values[:-max_test]
-            test_values = values[-max_test:]
-
-            predictions = self._forecast_linear(train_values, max_test)
-            rounded_predictions = [int(round(max(pred, 0.0))) for pred in predictions]
-
-            abs_errors = [abs(real - pred) for real, pred in zip(test_values, rounded_predictions)]
-            mae = mean(abs_errors) if abs_errors else 0.0
-
-            pct_errors = [
-                (abs(real - pred) / real) * 100.0
-                for real, pred in zip(test_values, rounded_predictions)
-                if real > 0
-            ]
-            mape = round(mean(pct_errors), 2) if pct_errors else None
-
-            results.append(
-                {
-                    "skill": skill,
-                    "train_points": len(train_values),
-                    "test_points": len(test_values),
-                    "mae": round(float(mae), 2),
-                    "mape_pct": mape,
-                    "confidence_level": self._confidence_label(mape),
-                }
-            )
+        technical_counter, soft_counter = self._build_skill_monthly_counters_by_category(jobs)
+        technical_skills = self._build_skill_confidence_series(technical_counter, top_n, test_horizon_months)
+        soft_skills = self._build_skill_confidence_series(soft_counter, top_n, test_horizon_months)
 
         return {
             "generated_at": datetime.utcnow(),
             "top_n": top_n,
             "test_horizon_months": test_horizon_months,
             "total_jobs_analyzed": len(jobs),
-            "skills": results,
+            "technical_skills": technical_skills,
+            "soft_skills": soft_skills,
+            "skills": technical_skills,
         }
 
     @staticmethod
@@ -264,11 +184,138 @@ class JobService:
                 continue
 
             for skill in skills:
-                if skill not in skill_monthly_counter:
-                    skill_monthly_counter[skill] = Counter()
-                skill_monthly_counter[skill][month_key] += 1
+                # Desnormalizar para mostrar de forma legible
+                display_skill = denormalize_skill(skill)
+                if display_skill not in skill_monthly_counter:
+                    skill_monthly_counter[display_skill] = Counter()
+                skill_monthly_counter[display_skill][month_key] += 1
 
         return skill_monthly_counter
+
+    @staticmethod
+    def _build_skill_monthly_counters_by_category(jobs: List[Job]) -> Tuple[Dict[str, Counter], Dict[str, Counter]]:
+        technical_skill_monthly_counter: Dict[str, Counter] = {}
+        soft_skill_monthly_counter: Dict[str, Counter] = {}
+
+        for job in jobs:
+            date_ref = job.published_at or job.scraped_at
+            if not date_ref:
+                continue
+
+            month_key = date_ref.strftime("%Y-%m")
+            skills = JobService._normalize_skills(job.skills)
+            if not skills:
+                continue
+
+            for skill in skills:
+                display_skill = format_skill(skill)
+                if not display_skill:
+                    continue
+
+                target_counter = soft_skill_monthly_counter if skill_category(skill) == "soft" else technical_skill_monthly_counter
+                if display_skill not in target_counter:
+                    target_counter[display_skill] = Counter()
+                target_counter[display_skill][month_key] += 1
+
+        return technical_skill_monthly_counter, soft_skill_monthly_counter
+
+    @staticmethod
+    def _build_skill_forecast_series(
+        skill_monthly_counter: Dict[str, Counter],
+        top_n: int,
+        months_ahead: int,
+    ) -> List[Dict[str, object]]:
+        ranked_skills = sorted(
+            skill_monthly_counter.items(),
+            key=lambda item: sum(item[1].values()),
+            reverse=True,
+        )[:top_n]
+
+        results: List[Dict[str, object]] = []
+        for skill, monthly_counts in ranked_skills:
+            months = sorted(monthly_counts.keys())
+            observed_values = [int(monthly_counts[month]) for month in months]
+
+            predicted_values = JobService._forecast_linear(observed_values, months_ahead)
+            next_months = JobService._next_months(months[-1], months_ahead)
+
+            history = [{"month": month, "count": int(monthly_counts[month])} for month in months]
+            forecast = [
+                {"month": month, "count": int(round(max(value, 0.0)))}
+                for month, value in zip(next_months, predicted_values)
+            ]
+
+            observed_total = sum(point["count"] for point in history)
+            projected_total = sum(point["count"] for point in forecast)
+
+            baseline = observed_values[-1] if observed_values else 0
+            projected_last = forecast[-1]["count"] if forecast else 0
+            growth_pct = None
+            if baseline > 0:
+                growth_pct = round(((projected_last - baseline) / baseline) * 100.0, 2)
+
+            results.append(
+                {
+                    "skill": skill,
+                    "history": history,
+                    "forecast": forecast,
+                    "total_observed": observed_total,
+                    "projected_total": projected_total,
+                    "growth_pct": growth_pct,
+                }
+            )
+
+        return results
+
+    @staticmethod
+    def _build_skill_confidence_series(
+        skill_monthly_counter: Dict[str, Counter],
+        top_n: int,
+        test_horizon_months: int,
+    ) -> List[Dict[str, object]]:
+        ranked_skills = sorted(
+            skill_monthly_counter.items(),
+            key=lambda item: sum(item[1].values()),
+            reverse=True,
+        )[:top_n]
+
+        results: List[Dict[str, object]] = []
+        for skill, monthly_counts in ranked_skills:
+            months = sorted(monthly_counts.keys())
+            values = [int(monthly_counts[month]) for month in months]
+
+            max_test = min(test_horizon_months, max(len(values) - 1, 0))
+            if max_test <= 0:
+                continue
+
+            train_values = values[:-max_test]
+            test_values = values[-max_test:]
+
+            predictions = JobService._forecast_linear(train_values, max_test)
+            rounded_predictions = [int(round(max(pred, 0.0))) for pred in predictions]
+
+            abs_errors = [abs(real - pred) for real, pred in zip(test_values, rounded_predictions)]
+            mae = mean(abs_errors) if abs_errors else 0.0
+
+            pct_errors = [
+                (abs(real - pred) / real) * 100.0
+                for real, pred in zip(test_values, rounded_predictions)
+                if real > 0
+            ]
+            mape = round(mean(pct_errors), 2) if pct_errors else None
+
+            results.append(
+                {
+                    "skill": skill,
+                    "train_points": len(train_values),
+                    "test_points": len(test_values),
+                    "mae": round(float(mae), 2),
+                    "mape_pct": mape,
+                    "confidence_level": JobService._confidence_label(mape),
+                }
+            )
+
+        return results
 
     @staticmethod
     def _forecast_linear(values: List[int], months_ahead: int) -> List[float]:
