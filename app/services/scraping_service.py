@@ -4,6 +4,7 @@ from datetime import datetime
 from app.logger import logger
 from app.models.job import Job
 from app.repositories.job_repository import JobRepository
+from app.services.job_normalizer import normalize_skills
 from scrapers.computrabajo.scraper import ComputrabajoScraper
 from scrapers.magneto.scraper import MagnetoScraper
 from scrapers.getonboard.scraper import run_getonboard_scraper
@@ -80,12 +81,14 @@ class ScrapingService:
                     title=raw_job.get('title'),
                     company=raw_job.get('company'),
                     city=raw_job.get('city'),
-                    remote_type=raw_job.get('remote_type'),
+                    location_text=raw_job.get('location_text'),
+                    contract_type=raw_job.get('contract_type', raw_job.get('remote_type')),
+                    work_mode=raw_job.get('work_mode'),
                     salary_min=raw_job.get('salary_min'),
                     salary_max=raw_job.get('salary_max'),
                     currency=raw_job.get('currency'),
                     description=raw_job.get('description'),
-                    skills=raw_job.get('skills'),
+                    skills=normalize_skills(raw_job.get('skills')) or None,
                     url=raw_job.get('url'),
                     published_at=raw_job.get('published_at'),
                     scraped_at=raw_job.get('scraped_at', datetime.now())
@@ -110,7 +113,9 @@ class ScrapingService:
             "title",
             "company",
             "city",
-            "remote_type",
+            "location_text",
+            "contract_type",
+            "work_mode",
             "salary_min",
             "salary_max",
             "currency",
@@ -123,6 +128,8 @@ class ScrapingService:
             current_value = getattr(existing, field)
             incoming_value = raw_job.get(field)
             if (current_value is None or current_value == "") and incoming_value not in (None, ""):
+                if field == "skills":
+                    incoming_value = normalize_skills(incoming_value) or None
                 setattr(existing, field, incoming_value)
                 updated = True
 

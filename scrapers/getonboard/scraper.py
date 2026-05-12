@@ -11,6 +11,7 @@ except ImportError:
     raise ImportError("Playwright no está instalado. Ejecuta: pip install playwright")
 
 from app.logger import logger
+from app.services.job_normalizer import detect_work_mode, extract_city_from_location, normalize_location_text
 
 class GetOnBoardScraper:
     """Scraper para GetOnBoard usando Playwright para JS rendering"""
@@ -237,24 +238,20 @@ class GetOnBoardScraper:
                 company = company_elem.get_text(strip=True)
 
             # Extraer ubicación
+            location_text = None
             city = None
             location_elem = soup.find(attrs={"itemprop": "address"})
             if location_elem:
-                location_text = location_elem.get_text(strip=True)
-                # Buscar ciudades conocidas
-                cities = ["Lima", "Bogotá", "Medellín", "Buenos Aires", "Santiago", "Ciudad de México"]
-                for city_name in cities:
-                    if city_name in location_text:
-                        city = city_name
-                        break
-                if not city:
-                    city = location_text.split(",")[0].strip()
+                location_text = normalize_location_text(location_elem.get_text(" ", strip=True))
+                city = extract_city_from_location(location_text)
 
             # Extraer tipo de empleo/contrato
             employment_type = None
             employment_elem = soup.find(attrs={"itemprop": "employmentType"})
             if employment_elem:
                 employment_type = employment_elem.get("content", employment_elem.get_text(strip=True))
+
+            work_mode = detect_work_mode(location_text, employment_type)
 
             # Extraer salario
             salary_min = salary_max = currency = None
@@ -313,7 +310,9 @@ class GetOnBoardScraper:
                 'title': title,
                 'company': company,
                 'city': city,
-                'remote_type': employment_type,
+                'location_text': location_text,
+                'contract_type': employment_type,
+                'work_mode': work_mode,
                 'url': job_url,
                 'salary_min': salary_min,
                 'salary_max': salary_max,
@@ -323,7 +322,6 @@ class GetOnBoardScraper:
                 'published_at': published_at or datetime.now(),
                 'scraped_at': datetime.now()
             }
-
         except Exception as e:
             logger.warning(f"    ❌ Error extrayendo detalle de {job_url}: {e}")
             return None

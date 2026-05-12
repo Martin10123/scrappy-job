@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from app.logger import logger
 from app.models.job import Job
 from app.repositories.job_repository import JobRepository
+from app.services.job_normalizer import detect_work_mode, normalize_skills
 
 class JobService:
     def __init__(self, repository: JobRepository):
@@ -15,20 +16,22 @@ class JobService:
         self,
         source: Optional[str] = None,
         city: Optional[str] = None,
-        remote_type: Optional[str] = None,
+        contract_type: Optional[str] = None,
+        work_mode: Optional[str] = None,
         search: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> Tuple[List[Job], int]:
         logger.debug(
             "JobService: solicitando listado de jobs filtrado "
-            f"source={source} city={city} remote_type={remote_type} search={search} "
+            f"source={source} city={city} contract_type={contract_type} work_mode={work_mode} search={search} "
             f"limit={limit} offset={offset}"
         )
         jobs = self.repository.get_filtered(
             source=source,
             city=city,
-            remote_type=remote_type,
+            contract_type=contract_type,
+            work_mode=work_mode,
             search=search,
             limit=limit,
             offset=offset,
@@ -36,7 +39,8 @@ class JobService:
         total = self.repository.count_filtered(
             source=source,
             city=city,
-            remote_type=remote_type,
+            contract_type=contract_type,
+            work_mode=work_mode,
             search=search,
         )
         logger.info(f"JobService: {len(jobs)} jobs recuperados de {total} totales")
@@ -61,7 +65,12 @@ class JobService:
 
         source_counter = Counter(job.source for job in jobs if job.source)
         city_counter = Counter(job.city for job in jobs if job.city)
-        remote_counter = Counter(job.remote_type for job in jobs if job.remote_type)
+        contract_counter = Counter(job.contract_type for job in jobs if job.contract_type)
+        work_mode_counter = Counter(
+            (job.work_mode or detect_work_mode(job.location_text or job.city, job.contract_type))
+            for job in jobs
+            if (job.work_mode or job.location_text or job.city or job.contract_type)
+        )
         seniority_counter = Counter(job.seniority for job in jobs if job.seniority)
 
         skill_counter = Counter()
@@ -72,8 +81,9 @@ class JobService:
         for job in jobs:
             if isinstance(job.skills, list):
                 for skill in job.skills:
-                    if isinstance(skill, str) and skill.strip():
-                        skill_counter[skill.strip().lower()] += 1
+                    normalized = normalize_skills([skill])
+                    if normalized:
+                        skill_counter[normalized[0]] += 1
 
             if job.salary_min is not None:
                 salary_mins.append(job.salary_min)
@@ -88,7 +98,8 @@ class JobService:
             "total_jobs": len(jobs),
             "top_sources": dict(source_counter.most_common(top_n)),
             "top_cities": dict(city_counter.most_common(top_n)),
-            "remote_type_distribution": dict(remote_counter.most_common(top_n)),
+            "contract_type_distribution": dict(contract_counter.most_common(top_n)),
+            "work_mode_distribution": dict(work_mode_counter.most_common(top_n)),
             "seniority_distribution": dict(seniority_counter.most_common(top_n)),
             "top_skills": dict(skill_counter.most_common(top_n)),
             "salary": {
@@ -236,20 +247,7 @@ class JobService:
 
     @staticmethod
     def _normalize_skills(skills: object) -> List[str]:
-        if not isinstance(skills, list):
-            return []
-
-        normalized = []
-        seen = set()
-        for skill in skills:
-            if not isinstance(skill, str):
-                continue
-            clean = skill.strip().lower()
-            if not clean or clean in seen:
-                continue
-            seen.add(clean)
-            normalized.append(clean)
-        return normalized
+        return normalize_skills(skills)
 
     @staticmethod
     def _build_skill_monthly_counter(jobs: List[Job]) -> Dict[str, Counter]:

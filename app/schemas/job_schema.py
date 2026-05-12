@@ -9,7 +9,9 @@ class JobRead(BaseModel):
     title: str
     company: Optional[str]
     city: Optional[str]
-    remote_type: Optional[str]
+    location_text: Optional[str]
+    contract_type: Optional[str]
+    work_mode: Optional[str]
     salary_min: Optional[int]
     salary_max: Optional[int]
     currency: Optional[str]

@@ -9,6 +9,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from app.logger import logger
+from app.services.job_normalizer import detect_work_mode, extract_city_from_location, normalize_location_text
 
 
 class ComputrabajoScraper:
@@ -121,7 +122,10 @@ class ComputrabajoScraper:
 
             details = self._extract_offer_detail_lines(container)
             salary_min, salary_max, currency = self._parse_salary(details)
-            remote_type = self._extract_remote_type(details)
+            contract_type = self._extract_contract_type(details)
+            location_text = normalize_location_text(city)
+            city = extract_city_from_location(location_text) or city
+            work_mode = detect_work_mode(location_text, contract_type)
 
             listed_skills = self._extract_skills_from_requirements(container)
             nlp_skills = self._extract_skills_from_text(description)
@@ -134,7 +138,9 @@ class ComputrabajoScraper:
                 "title": title,
                 "company": company,
                 "city": city,
-                "remote_type": remote_type,
+                "location_text": location_text,
+                "contract_type": contract_type,
+                "work_mode": work_mode,
                 "salary_min": salary_min,
                 "salary_max": salary_max,
                 "currency": currency,
@@ -225,7 +231,7 @@ class ComputrabajoScraper:
 
         return None, None, None
 
-    def _extract_remote_type(self, detail_lines: List[str]) -> Optional[str]:
+    def _extract_contract_type(self, detail_lines: List[str]) -> Optional[str]:
         options = {
             "presencial": "presencial",
             "remoto": "remoto",

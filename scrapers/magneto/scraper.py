@@ -7,6 +7,7 @@ import re
 from requests.exceptions import RequestException
 
 from app.logger import logger
+from app.services.job_normalizer import detect_work_mode, extract_city_from_location, normalize_location_text
 
 class MagnetoScraper:
     """Scraper para Magneto365"""
@@ -137,7 +138,7 @@ class MagnetoScraper:
 
             # Buscar empresa y tipo de contrato en los elementos de texto
             company = None
-            remote_type = None
+            contract_type = None
             text_elements = card.find_all(string=True, recursive=True)
             for text in text_elements:
                 text = text.strip()
@@ -150,7 +151,7 @@ class MagnetoScraper:
                     # Verificar que no sea el título (que también puede tener |)
                     if potential_company != title:
                         company = potential_company
-                        remote_type = potential_contract
+                        contract_type = potential_contract
                         break
 
             # Extraer ciudad/ubicación - buscar en elementos de texto
@@ -185,8 +186,8 @@ class MagnetoScraper:
             # Priorizar datos de detalle cuando estén disponibles.
             if detail_data.get("company"):
                 company = detail_data["company"]
-            if detail_data.get("remote_type"):
-                remote_type = detail_data["remote_type"]
+            if detail_data.get("contract_type"):
+                contract_type = detail_data["contract_type"]
             if detail_data.get("city"):
                 city = detail_data["city"]
             if detail_data.get("salary_min"):
@@ -196,12 +197,18 @@ class MagnetoScraper:
             if detail_data.get("currency"):
                 currency = detail_data["currency"]
 
+            location_text = normalize_location_text(city)
+            normalized_city = extract_city_from_location(location_text) or city
+            work_mode = detect_work_mode(location_text, contract_type)
+
             return {
                 'source': 'magneto365',
                 'title': title,
                 'company': company,
-                'city': city,
-                'remote_type': remote_type,
+                'city': normalized_city,
+                'location_text': location_text,
+                'contract_type': contract_type,
+                'work_mode': work_mode,
                 'url': url,
                 'salary_min': salary_min,
                 'salary_max': salary_max,
@@ -244,10 +251,10 @@ class MagnetoScraper:
             if company_elem:
                 company = company_elem.get_text(" ", strip=True)
 
-            remote_type = None
+            contract_type = None
             contract_elem = soup.find("span", class_=lambda x: x and "contract-type" in x)
             if contract_elem:
-                remote_type = contract_elem.get_text(" ", strip=True).lstrip("| ").strip()
+                contract_type = contract_elem.get_text(" ", strip=True).lstrip("| ").strip()
 
             city = None
             summary_labels = soup.find_all("span", class_=lambda x: x and "summary_label" in x)
@@ -283,8 +290,10 @@ class MagnetoScraper:
 
             return {
                 "company": company,
-                "remote_type": remote_type,
+                "contract_type": contract_type,
                 "city": city,
+                "location_text": normalize_location_text(city),
+                "work_mode": detect_work_mode(city, contract_type),
                 "salary_min": salary_min,
                 "salary_max": salary_max,
                 "currency": currency,

@@ -18,14 +18,15 @@ class JobRepository:
         self,
         source: Optional[str] = None,
         city: Optional[str] = None,
-        remote_type: Optional[str] = None,
+        contract_type: Optional[str] = None,
+        work_mode: Optional[str] = None,
         search: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> List[Job]:
         logger.debug(
             "JobRepository: consultando jobs filtrados "
-            f"source={source} city={city} remote_type={remote_type} search={search} "
+            f"source={source} city={city} contract_type={contract_type} work_mode={work_mode} search={search} "
             f"limit={limit} offset={offset}"
         )
 
@@ -35,8 +36,10 @@ class JobRepository:
             query = query.filter(Job.source == source)
         if city:
             query = query.filter(Job.city == city)
-        if remote_type:
-            query = query.filter(Job.remote_type == remote_type)
+        if contract_type:
+            query = query.filter(Job.contract_type == contract_type)
+        if work_mode and hasattr(Job, "work_mode"):
+            query = query.filter(Job.work_mode == work_mode)
         if search:
             like_pattern = f"%{search}%"
             query = query.filter(
@@ -59,7 +62,8 @@ class JobRepository:
         self,
         source: Optional[str] = None,
         city: Optional[str] = None,
-        remote_type: Optional[str] = None,
+        contract_type: Optional[str] = None,
+        work_mode: Optional[str] = None,
         search: Optional[str] = None,
     ) -> int:
         query = self.session.query(Job)
@@ -68,8 +72,10 @@ class JobRepository:
             query = query.filter(Job.source == source)
         if city:
             query = query.filter(Job.city == city)
-        if remote_type:
-            query = query.filter(Job.remote_type == remote_type)
+        if contract_type:
+            query = query.filter(Job.contract_type == contract_type)
+        if work_mode and hasattr(Job, "work_mode"):
+            query = query.filter(Job.work_mode == work_mode)
         if search:
             like_pattern = f"%{search}%"
             query = query.filter(

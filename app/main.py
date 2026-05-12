@@ -5,13 +5,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.jobs import router as jobs_router
-from app.database import engine, Base
+from app.database import engine, Base, backfill_jobs_location_fields, sync_jobs_schema
 
 # Cargar variables de ambiente
 load_dotenv()
 
 # Crear las tablas en la base de datos
 Base.metadata.create_all(bind=engine)
+sync_jobs_schema()
+backfill_jobs_location_fields()
 
 app = FastAPI(
     title="JobTrend AI",

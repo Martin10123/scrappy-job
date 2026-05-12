@@ -26,7 +26,8 @@ def list_jobs(db: Session = Depends(get_db)):
 def search_jobs(
     source: Optional[str] = Query(default=None),
     city: Optional[str] = Query(default=None),
-    remote_type: Optional[str] = Query(default=None),
+    contract_type: Optional[str] = Query(default=None),
+    work_mode: Optional[str] = Query(default=None),
     search: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -38,7 +39,8 @@ def search_jobs(
     jobs, total = service.list_jobs(
         source=source,
         city=city,
-        remote_type=remote_type,
+        contract_type=contract_type,
+        work_mode=work_mode,
         search=search,
         limit=limit,
         offset=offset,

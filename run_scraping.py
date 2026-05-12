@@ -68,7 +68,7 @@ def run_scraping():
                         title=raw_job.get('title'),
                         company=raw_job.get('company'),
                         city=raw_job.get('city'),
-                        remote_type=raw_job.get('remote_type'),
+                        contract_type=raw_job.get('contract_type', raw_job.get('remote_type')),
                         salary_min=raw_job.get('salary_min'),
                         salary_max=raw_job.get('salary_max'),
                         currency=raw_job.get('currency'),
