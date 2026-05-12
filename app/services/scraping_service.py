@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import Callable, Dict, List, Optional, Union
 from datetime import datetime
 
 from app.logger import logger
@@ -20,8 +20,14 @@ class ScrapingService:
             'getonboard': None,  # GetOnBoard usa async, se llama diferente
         }
 
-    def scrape_and_save_jobs(self, source: str, search_term: Union[str, List[str]] = "desarrollador",
-                           location: str = "colombia", max_pages: int = 5) -> int:
+    def scrape_and_save_jobs(
+        self,
+        source: str,
+        search_term: Union[str, List[str]] = "desarrollador",
+        location: str = "colombia",
+        max_pages: int = 5,
+        progress_callback: Optional[Callable[[Dict[str, object]], None]] = None,
+    ) -> int:
         """
         Scrape ofertas y las guarda en la base de datos
 
@@ -38,6 +44,17 @@ class ScrapingService:
             logger.error(f"Scraper no encontrado para source: {source}")
             raise ValueError(f"Scraper no encontrado para source: {source}")
 
+        if progress_callback:
+            progress_callback(
+                {
+                    "status": "running",
+                    "message": "Iniciando scraping",
+                    "processed_jobs": 0,
+                    "total_jobs": 0,
+                    "saved_jobs": 0,
+                }
+            )
+
         logger.info(f"Ejecutando scraper {source} para term='{search_term}' max_pages={max_pages}")
 
         # Obtener ofertas del scraper
@@ -50,6 +67,17 @@ class ScrapingService:
             # Magneto365 y ComputraBajo usan sync
             scraper = self.scrapers[source]
             raw_jobs = scraper.get_jobs(search_term=search_term, location=location, max_pages=max_pages)
+
+        if progress_callback:
+            progress_callback(
+                {
+                    "status": "running",
+                    "message": "Ofertas obtenidas, procesando...",
+                    "processed_jobs": 0,
+                    "total_jobs": len(raw_jobs),
+                    "saved_jobs": 0,
+                }
+            )
 
         saved_count = 0
         processed_count = 0
@@ -102,9 +130,40 @@ class ScrapingService:
 
             except Exception as e:
                 logger.exception(f"  ❌ Error guardando oferta '{job_title}': {e}")
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "status": "running",
+                            "message": f"Error procesando: {job_title}",
+                            "processed_jobs": processed_count,
+                            "total_jobs": len(raw_jobs),
+                            "saved_jobs": saved_count,
+                        }
+                    )
                 continue
 
+            if progress_callback:
+                progress_callback(
+                    {
+                        "status": "running",
+                        "message": f"Procesadas {processed_count}/{len(raw_jobs)}",
+                        "processed_jobs": processed_count,
+                        "total_jobs": len(raw_jobs),
+                        "saved_jobs": saved_count,
+                    }
+                )
+
         logger.info(f"\n📊 Resumen: {processed_count} procesadas, {saved_count} guardadas/enriquecidas")
+        if progress_callback:
+            progress_callback(
+                {
+                    "status": "completed",
+                    "message": "Scraping finalizado",
+                    "processed_jobs": processed_count,
+                    "total_jobs": len(raw_jobs),
+                    "saved_jobs": saved_count,
+                }
+            )
         return saved_count
 
     def _merge_missing_fields(self, existing: Job, raw_job: dict) -> bool:

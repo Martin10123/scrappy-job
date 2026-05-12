@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -43,12 +43,40 @@ class ScrapeTriggerRequest(BaseModel):
 
 
 class ScrapeTriggerResponse(BaseModel):
+    task_id: str
+    status_url: str
     message: str
     source: Optional[str]
     search_term: Optional[str]
     location: Optional[str]
     max_pages: int
     queued_sources: List[str]
+
+
+class ScrapeStatusSource(BaseModel):
+    status: str
+    processed_jobs: int
+    total_jobs: int
+    saved_jobs: int
+    progress_pct: float
+    message: Optional[str] = None
+
+
+class ScrapeStatusResponse(BaseModel):
+    task_id: str
+    status: str
+    message: str
+    queued_sources: List[str]
+    total_sources: int
+    completed_sources: int
+    current_source: Optional[str]
+    processed_jobs: int
+    total_jobs: int
+    saved_jobs: int
+    progress_pct: float
+    started_at: datetime
+    updated_at: datetime
+    sources: Dict[str, ScrapeStatusSource]
 
 
 class ForecastPoint(BaseModel):

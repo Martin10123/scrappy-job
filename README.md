@@ -65,7 +65,17 @@ curl -X POST "http://127.0.0.1:8000/jobs/scrape/magneto365"
 curl -X POST "http://127.0.0.1:8000/jobs/scrape/run" \
   -H "Content-Type: application/json" \
   -d "{\"source\":\"magneto365\",\"search_term\":\"desarrollador\",\"location\":\"colombia\",\"max_pages\":3}"
+
+# Consultar progreso para loading en front
+curl "http://127.0.0.1:8000/jobs/scrape/status/<task_id>"
 ```
+
+Ejemplo de flujo para front:
+1. Hacer POST a /jobs/scrape/run (o /jobs/scrape/{source}).
+2. Leer task_id y status_url de la respuesta.
+3. Hacer polling cada 2-3 segundos a status_url.
+4. Renderizar progress_pct, current_source, processed_jobs/total_jobs y saved_jobs.
+5. Detener polling cuando status sea completed o completed_with_errors.
 
 ### 6. Ver ofertas
 ```bash

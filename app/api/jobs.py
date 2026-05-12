@@ -1,4 +1,7 @@
+from datetime import datetime
+from threading import Lock
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
@@ -9,9 +12,125 @@ from app.database import get_db_session
 from app.repositories.job_repository import JobRepository
 from app.services.job_service import JobService
 from app.services.scraping_service import ScrapingService
-from app.schemas.job_schema import JobDemandForecastResponse, JobForecastConfidenceResponse, JobListResponse, JobRead, ScrapeTriggerRequest, ScrapeTriggerResponse
+from app.schemas.job_schema import JobDemandForecastResponse, JobForecastConfidenceResponse, JobListResponse, JobRead, ScrapeStatusResponse, ScrapeTriggerRequest, ScrapeTriggerResponse
 
 router = APIRouter()
+
+_SCRAPE_TASKS = {}
+_SCRAPE_TASKS_LOCK = Lock()
+
+
+def _ensure_task(task_id: str) -> dict:
+    with _SCRAPE_TASKS_LOCK:
+        task = _SCRAPE_TASKS.get(task_id)
+        if task is None:
+            raise KeyError(task_id)
+        return task
+
+
+def _update_task(task_id: str, **updates) -> None:
+    with _SCRAPE_TASKS_LOCK:
+        task = _SCRAPE_TASKS.get(task_id)
+        if not task:
+            return
+        task.update(updates)
+        task["updated_at"] = datetime.utcnow()
+
+
+def _recompute_task_aggregate(task_id: str) -> None:
+    with _SCRAPE_TASKS_LOCK:
+        task = _SCRAPE_TASKS.get(task_id)
+        if not task:
+            return
+
+        sources = task["sources"]
+        processed_jobs = sum(source["processed_jobs"] for source in sources.values())
+        total_jobs = sum(source["total_jobs"] for source in sources.values())
+        saved_jobs = sum(source["saved_jobs"] for source in sources.values())
+
+        completed_sources = sum(1 for source in sources.values() if source["status"] in {"completed", "error"})
+        current_sources = [name for name, source in sources.items() if source["status"] == "running"]
+
+        if total_jobs > 0:
+            progress_pct = round((processed_jobs / total_jobs) * 100.0, 2)
+        else:
+            progress_pct = round((completed_sources / max(task["total_sources"], 1)) * 100.0, 2)
+
+        overall_status = "running"
+        if completed_sources == task["total_sources"]:
+            has_error = any(source["status"] == "error" for source in sources.values())
+            overall_status = "completed_with_errors" if has_error else "completed"
+
+        task["processed_jobs"] = processed_jobs
+        task["total_jobs"] = total_jobs
+        task["saved_jobs"] = saved_jobs
+        task["completed_sources"] = completed_sources
+        task["current_source"] = current_sources[0] if current_sources else None
+        task["progress_pct"] = progress_pct
+        task["status"] = overall_status
+        task["updated_at"] = datetime.utcnow()
+
+
+def _run_scrape_background(task_id: str, source: str, search_term: str, location: str, max_pages: int) -> None:
+    def on_progress(payload: dict) -> None:
+        with _SCRAPE_TASKS_LOCK:
+            task = _SCRAPE_TASKS.get(task_id)
+            if not task:
+                return
+
+            source_progress = task["sources"][source]
+            source_progress["status"] = payload.get("status", source_progress["status"])
+            source_progress["processed_jobs"] = int(payload.get("processed_jobs", source_progress["processed_jobs"]))
+            source_progress["total_jobs"] = int(payload.get("total_jobs", source_progress["total_jobs"]))
+            source_progress["saved_jobs"] = int(payload.get("saved_jobs", source_progress["saved_jobs"]))
+            source_progress["message"] = payload.get("message", source_progress.get("message"))
+            if source_progress["total_jobs"] > 0:
+                source_progress["progress_pct"] = round(
+                    (source_progress["processed_jobs"] / source_progress["total_jobs"]) * 100.0,
+                    2,
+                )
+            elif source_progress["status"] in {"completed", "error"}:
+                source_progress["progress_pct"] = 100.0
+
+            task["message"] = f"Procesando fuente: {source}"
+            task["updated_at"] = datetime.utcnow()
+
+        _recompute_task_aggregate(task_id)
+
+    _update_task(task_id, status="running", message=f"Iniciando fuente: {source}")
+    with _SCRAPE_TASKS_LOCK:
+        if task_id in _SCRAPE_TASKS:
+            _SCRAPE_TASKS[task_id]["sources"][source]["status"] = "running"
+
+    db = get_db_session()
+    try:
+        repository = JobRepository(db)
+        scraping_service = ScrapingService(repository)
+        scraping_service.scrape_and_save_jobs(
+            source=source,
+            search_term=search_term,
+            location=location,
+            max_pages=max_pages,
+            progress_callback=on_progress,
+        )
+        with _SCRAPE_TASKS_LOCK:
+            task = _SCRAPE_TASKS.get(task_id)
+            if task:
+                task["sources"][source]["status"] = "completed"
+                task["sources"][source]["progress_pct"] = 100.0
+                task["sources"][source]["message"] = "Fuente completada"
+                task["updated_at"] = datetime.utcnow()
+    except Exception as exc:
+        logger.exception(f"Error en background scraping source={source}")
+        with _SCRAPE_TASKS_LOCK:
+            task = _SCRAPE_TASKS.get(task_id)
+            if task:
+                task["sources"][source]["status"] = "error"
+                task["sources"][source]["message"] = str(exc)
+                task["updated_at"] = datetime.utcnow()
+    finally:
+        db.close()
+        _recompute_task_aggregate(task_id)
 
 
 def _run_scrape_background(source: str, search_term: str, location: str, max_pages: int) -> None:
@@ -136,9 +255,39 @@ def scrape_jobs(source: str, background_tasks: BackgroundTasks,
     """
     max_pages = max(max_pages, 5)
 
-    logger.info(f"Iniciando scraping en background: source={source}, search_term={search_term}, location={location}, max_pages={max_pages}")
+    task_id = str(uuid4())
+    now = datetime.utcnow()
+    with _SCRAPE_TASKS_LOCK:
+        _SCRAPE_TASKS[task_id] = {
+            "task_id": task_id,
+            "status": "queued",
+            "message": "Scraping encolado",
+            "queued_sources": [source],
+            "total_sources": 1,
+            "completed_sources": 0,
+            "current_source": None,
+            "processed_jobs": 0,
+            "total_jobs": 0,
+            "saved_jobs": 0,
+            "progress_pct": 0.0,
+            "started_at": now,
+            "updated_at": now,
+            "sources": {
+                source: {
+                    "status": "queued",
+                    "processed_jobs": 0,
+                    "total_jobs": 0,
+                    "saved_jobs": 0,
+                    "progress_pct": 0.0,
+                    "message": "Pendiente",
+                }
+            },
+        }
+
+    logger.info(f"Iniciando scraping en background: source={source}, search_term={search_term}, location={location}, max_pages={max_pages}, task_id={task_id}")
     background_tasks.add_task(
         _run_scrape_background,
+        task_id=task_id,
         source=source,
         search_term=search_term,
         location=location,
@@ -146,10 +295,14 @@ def scrape_jobs(source: str, background_tasks: BackgroundTasks,
     )
 
     return {
+        "task_id": task_id,
+        "status_url": f"/jobs/scrape/status/{task_id}",
         "message": f"Scraping de {source} iniciado en background",
+        "source": source,
         "search_term": search_term,
         "location": location,
-        "max_pages": max_pages
+        "max_pages": max_pages,
+        "queued_sources": [source],
     }
 
 
@@ -167,9 +320,40 @@ def trigger_scrape(
         f"source={payload.source} search_term={payload.search_term} location={payload.location} max_pages={payload.max_pages}"
     )
 
+    task_id = str(uuid4())
+    now = datetime.utcnow()
+    with _SCRAPE_TASKS_LOCK:
+        _SCRAPE_TASKS[task_id] = {
+            "task_id": task_id,
+            "status": "queued",
+            "message": "Scraping encolado desde el front",
+            "queued_sources": queued_sources,
+            "total_sources": len(queued_sources),
+            "completed_sources": 0,
+            "current_source": None,
+            "processed_jobs": 0,
+            "total_jobs": 0,
+            "saved_jobs": 0,
+            "progress_pct": 0.0,
+            "started_at": now,
+            "updated_at": now,
+            "sources": {
+                source: {
+                    "status": "queued",
+                    "processed_jobs": 0,
+                    "total_jobs": 0,
+                    "saved_jobs": 0,
+                    "progress_pct": 0.0,
+                    "message": "Pendiente",
+                }
+                for source in queued_sources
+            },
+        }
+
     for source in queued_sources:
         background_tasks.add_task(
             _run_scrape_background,
+            task_id=task_id,
             source=source,
             search_term=payload.search_term or "desarrollador",
             location=payload.location or "colombia",
@@ -177,6 +361,8 @@ def trigger_scrape(
         )
 
     return {
+        "task_id": task_id,
+        "status_url": f"/jobs/scrape/status/{task_id}",
         "message": "Scraping encolado desde el front",
         "source": payload.source,
         "search_term": payload.search_term,
@@ -184,6 +370,16 @@ def trigger_scrape(
         "max_pages": payload.max_pages or 5,
         "queued_sources": queued_sources,
     }
+
+
+@router.get("/scrape/status/{task_id}", response_model=ScrapeStatusResponse)
+def get_scrape_status(task_id: str):
+    try:
+        task = _ensure_task(task_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Scrape task not found")
+
+    return task
 
 @router.get("/stats/scraping")
 def get_scraping_stats(db: Session = Depends(get_db)):
