@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, JSON, String
+from sqlalchemy import Column, Boolean, DateTime, Integer, JSON, String
 
 from app.database import Base
 
@@ -13,6 +13,7 @@ class Job(Base):
     location_text = Column(String)
     contract_type = Column(String)
     work_mode = Column(String)
+    english_required = Column(Boolean)
     salary_min = Column(Integer)
     salary_max = Column(Integer)
     currency = Column(String)

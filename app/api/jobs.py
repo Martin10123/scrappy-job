@@ -5,12 +5,28 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.logger import logger
+from app.database import get_db_session
 from app.repositories.job_repository import JobRepository
 from app.services.job_service import JobService
 from app.services.scraping_service import ScrapingService
-from app.schemas.job_schema import JobDemandForecastResponse, JobForecastConfidenceResponse, JobListResponse, JobRead
+from app.schemas.job_schema import JobDemandForecastResponse, JobForecastConfidenceResponse, JobListResponse, JobRead, ScrapeTriggerRequest, ScrapeTriggerResponse
 
 router = APIRouter()
+
+
+def _run_scrape_background(source: str, search_term: str, location: str, max_pages: int) -> None:
+    db = get_db_session()
+    try:
+        repository = JobRepository(db)
+        scraping_service = ScrapingService(repository)
+        scraping_service.scrape_and_save_jobs(
+            source=source,
+            search_term=search_term,
+            location=location,
+            max_pages=max_pages,
+        )
+    finally:
+        db.close()
 
 @router.get("/", response_model=list[JobRead])
 def list_jobs(db: Session = Depends(get_db)):
@@ -120,16 +136,13 @@ def scrape_jobs(source: str, background_tasks: BackgroundTasks,
     """
     max_pages = max(max_pages, 5)
 
-    repository = JobRepository(db)
-    scraping_service = ScrapingService(repository)
-
     logger.info(f"Iniciando scraping en background: source={source}, search_term={search_term}, location={location}, max_pages={max_pages}")
     background_tasks.add_task(
-        scraping_service.scrape_and_save_jobs,
+        _run_scrape_background,
         source=source,
         search_term=search_term,
         location=location,
-        max_pages=max_pages
+        max_pages=max_pages,
     )
 
     return {
@@ -137,6 +150,39 @@ def scrape_jobs(source: str, background_tasks: BackgroundTasks,
         "search_term": search_term,
         "location": location,
         "max_pages": max_pages
+    }
+
+
+@router.post("/scrape/run", response_model=ScrapeTriggerResponse, status_code=202)
+def trigger_scrape(
+    payload: ScrapeTriggerRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Endpoint para que el front dispare scraping con un click."""
+    queued_sources = [payload.source] if payload.source else ["magneto365", "computrabajo", "getonboard"]
+
+    logger.info(
+        "Disparando scraping desde el front: "
+        f"source={payload.source} search_term={payload.search_term} location={payload.location} max_pages={payload.max_pages}"
+    )
+
+    for source in queued_sources:
+        background_tasks.add_task(
+            _run_scrape_background,
+            source=source,
+            search_term=payload.search_term or "desarrollador",
+            location=payload.location or "colombia",
+            max_pages=payload.max_pages or 5,
+        )
+
+    return {
+        "message": "Scraping encolado desde el front",
+        "source": payload.source,
+        "search_term": payload.search_term,
+        "location": payload.location,
+        "max_pages": payload.max_pages or 5,
+        "queued_sources": queued_sources,
     }
 
 @router.get("/stats/scraping")

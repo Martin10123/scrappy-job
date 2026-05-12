@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, Tuple
 from app.logger import logger
 from app.models.job import Job
 from app.repositories.job_repository import JobRepository
-from app.services.job_normalizer import detect_work_mode, format_skill, normalize_skills, skill_category
+from app.services.job_normalizer import detect_english_requirement, detect_work_mode, format_skill, normalize_skills, skill_category
 
 class JobService:
     def __init__(self, repository: JobRepository):
@@ -61,6 +61,7 @@ class JobService:
         city: Optional[str] = None,
         top_n: int = 10,
     ) -> Dict[str, object]:
+        top_n = max(top_n, 10)
         jobs = self.repository.get_all_filtered_for_analytics(source=source, city=city)
 
         source_counter = Counter(job.source for job in jobs if job.source)
@@ -75,6 +76,9 @@ class JobService:
 
         technical_skill_counter = Counter()
         soft_skill_counter = Counter()
+        english_requirement_counter = Counter()
+        english_requirement_monthly = Counter()
+        english_requirement_monthly_total = Counter()
         salary_mins = []
         salary_maxs = []
         monthly_counter = Counter()
@@ -99,7 +103,32 @@ class JobService:
 
             date_ref = job.published_at or job.scraped_at
             if date_ref:
-                monthly_counter[date_ref.strftime("%Y-%m")] += 1
+                month_key = date_ref.strftime("%Y-%m")
+                monthly_counter[month_key] += 1
+                english_requirement_monthly_total[month_key] += 1
+
+            english_required = getattr(job, "english_required", None)
+            if english_required is None:
+                english_required = detect_english_requirement(job.title, job.description, job.location_text)
+
+            if english_required is True:
+                english_requirement_counter["required"] += 1
+                if date_ref:
+                    english_requirement_monthly[date_ref.strftime("%Y-%m")] += 1
+            elif english_required is False:
+                english_requirement_counter["not_required"] += 1
+            else:
+                english_requirement_counter["unknown"] += 1
+
+        english_requirement_monthly_trend = {}
+        for month_key in sorted(english_requirement_monthly_total.keys()):
+            required_count = english_requirement_monthly.get(month_key, 0)
+            total_count = english_requirement_monthly_total[month_key]
+            english_requirement_monthly_trend[month_key] = {
+                "required": required_count,
+                "total": total_count,
+                "pct_required": round((required_count / total_count) * 100.0, 2) if total_count else 0.0,
+            }
 
         return {
             "total_jobs": len(jobs),
@@ -111,6 +140,8 @@ class JobService:
             "technical_skills": dict(technical_skill_counter.most_common(top_n)),
             "soft_skills": dict(soft_skill_counter.most_common(top_n)),
             "top_skills": dict(technical_skill_counter.most_common(top_n)),
+            "english_requirement_distribution": dict(english_requirement_counter),
+            "english_requirement_monthly_trend": english_requirement_monthly_trend,
             "salary": {
                 "avg_salary_min": round(mean(salary_mins), 2) if salary_mins else None,
                 "avg_salary_max": round(mean(salary_maxs), 2) if salary_maxs else None,
@@ -127,6 +158,7 @@ class JobService:
         top_n: int = 10,
         months_ahead: int = 3,
     ) -> Dict[str, object]:
+        top_n = max(top_n, 10)
         jobs = self.repository.get_all_filtered_for_analytics(source=source, city=city)
 
         technical_counter, soft_counter = self._build_skill_monthly_counters_by_category(jobs)
@@ -150,6 +182,7 @@ class JobService:
         top_n: int = 10,
         test_horizon_months: int = 2,
     ) -> Dict[str, object]:
+        top_n = max(top_n, 10)
         jobs = self.repository.get_all_filtered_for_analytics(source=source, city=city)
         technical_counter, soft_counter = self._build_skill_monthly_counters_by_category(jobs)
         technical_skills = self._build_skill_confidence_series(technical_counter, top_n, test_horizon_months)

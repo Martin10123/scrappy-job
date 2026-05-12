@@ -57,6 +57,8 @@ def sync_jobs_schema() -> None:
         statements.append('ALTER TABLE jobs ADD COLUMN location_text VARCHAR')
     if "work_mode" not in existing_columns:
         statements.append('ALTER TABLE jobs ADD COLUMN work_mode VARCHAR')
+    if "english_required" not in existing_columns:
+        statements.append('ALTER TABLE jobs ADD COLUMN english_required BOOLEAN')
 
     if not statements:
         return
@@ -68,7 +70,7 @@ def sync_jobs_schema() -> None:
 
 def backfill_jobs_location_fields() -> None:
     from app.models.job import Job
-    from app.services.job_normalizer import detect_work_mode, extract_city_from_location, normalize_location_text
+    from app.services.job_normalizer import detect_english_requirement, detect_work_mode, extract_city_from_location, normalize_location_text
 
     session = SessionLocal()
     try:
@@ -94,6 +96,11 @@ def backfill_jobs_location_fields() -> None:
 
             if derived_work_mode and job.work_mode != derived_work_mode:
                 job.work_mode = derived_work_mode
+                updated = True
+
+            derived_english_required = detect_english_requirement(job.title, job.description, job.location_text)
+            if derived_english_required is not None and job.english_required != derived_english_required:
+                job.english_required = derived_english_required
                 updated = True
 
         if updated:

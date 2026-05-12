@@ -12,6 +12,7 @@ class JobRead(BaseModel):
     location_text: Optional[str]
     contract_type: Optional[str]
     work_mode: Optional[str]
+    english_required: Optional[bool]
     salary_min: Optional[int]
     salary_max: Optional[int]
     currency: Optional[str]
@@ -32,6 +33,22 @@ class JobListResponse(BaseModel):
     limit: int
     offset: int
     items: List[JobRead]
+
+
+class ScrapeTriggerRequest(BaseModel):
+    source: Optional[str] = None
+    search_term: Optional[str] = "desarrollador"
+    location: Optional[str] = "colombia"
+    max_pages: Optional[int] = 5
+
+
+class ScrapeTriggerResponse(BaseModel):
+    message: str
+    source: Optional[str]
+    search_term: Optional[str]
+    location: Optional[str]
+    max_pages: int
+    queued_sources: List[str]
 
 
 class ForecastPoint(BaseModel):

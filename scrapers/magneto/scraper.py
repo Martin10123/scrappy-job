@@ -7,7 +7,7 @@ import re
 from requests.exceptions import RequestException
 
 from app.logger import logger
-from app.services.job_normalizer import detect_work_mode, extract_city_from_location, normalize_location_text
+from app.services.job_normalizer import detect_english_requirement, detect_work_mode, extract_city_from_location, normalize_location_text
 
 class MagnetoScraper:
     """Scraper para Magneto365"""
@@ -181,7 +181,7 @@ class MagnetoScraper:
                     salary_min = int(numbers[0].replace('.', ''))
                 currency = 'COP'
 
-            detail_data = self._extract_job_detail(url) if url else {}
+            detail_data = self._extract_job_detail(url, title=title) if url else {}
 
             # Priorizar datos de detalle cuando estén disponibles.
             if detail_data.get("company"):
@@ -227,7 +227,7 @@ class MagnetoScraper:
             logger.exception("Error extrayendo datos del job")
             return None
 
-    def _extract_job_detail(self, url: str) -> Dict:
+    def _extract_job_detail(self, url: str, title: Optional[str] = None) -> Dict:
         """Extrae metadatos desde la página de detalle de una vacante."""
         try:
             response = self.session.get(url, timeout=20)
@@ -296,6 +296,8 @@ class MagnetoScraper:
                 if not work_mode:
                     work_mode = detect_work_mode(description, None)
 
+            english_required = detect_english_requirement(title, description, contract_type, city)
+
             # Extraer skills - buscar múltiples selectores posibles
             skills: List[str] = []
             
@@ -332,6 +334,7 @@ class MagnetoScraper:
                 "salary_max": salary_max,
                 "currency": currency,
                 "description": description,
+                "english_required": english_required,
                 "skills": skills or None,
                 "published_at": published_at,
             }

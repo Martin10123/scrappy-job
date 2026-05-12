@@ -295,6 +295,48 @@ def skill_category(skill: object) -> str:
     return "soft" if is_soft_skill(skill) else "technical"
 
 
+def detect_english_requirement(*texts: Optional[str]) -> Optional[bool]:
+    combined_texts = [text for text in texts if isinstance(text, str) and text.strip()]
+    if not combined_texts:
+        return None
+
+    normalized_text = _strip_accents(" ".join(combined_texts).lower())
+    normalized_text = re.sub(r"\s+", " ", normalized_text)
+
+    negative_patterns = [
+        r"no requiere ingles",
+        r"sin ingles",
+        r"ingles no requerido",
+        r"not required in english",
+        r"english not required",
+    ]
+    positive_patterns = [
+        r"requiere.*ingles",
+        r"postular en ingles",
+        r"ingles.*requerid",
+        r"english required",
+        r"must be.*english",
+        r"fluent in english",
+        r"intermediate english",
+        r"advanced english",
+        r"b2 english",
+        r"english level",
+    ]
+
+    for pattern in negative_patterns:
+        if re.search(pattern, normalized_text):
+            return False
+
+    for pattern in positive_patterns:
+        if re.search(pattern, normalized_text):
+            return True
+
+    if re.search(r"\bingles\b|\benglish\b", normalized_text):
+        return True
+
+    return None
+
+
 def detect_work_mode(city: Optional[str], contract_type: Optional[str]) -> Optional[str]:
     for text in (city, contract_type):
         if not isinstance(text, str):

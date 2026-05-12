@@ -23,3 +23,6 @@ ALTER TABLE jobs
 
 ALTER TABLE jobs
     ADD COLUMN IF NOT EXISTS work_mode VARCHAR;
+
+ALTER TABLE jobs
+    ADD COLUMN IF NOT EXISTS english_required BOOLEAN;

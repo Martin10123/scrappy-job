@@ -11,7 +11,7 @@ except ImportError:
     raise ImportError("Playwright no está instalado. Ejecuta: pip install playwright")
 
 from app.logger import logger
-from app.services.job_normalizer import detect_work_mode, extract_city_from_location, normalize_location_text
+from app.services.job_normalizer import detect_english_requirement, detect_work_mode, extract_city_from_location, normalize_location_text
 
 class GetOnBoardScraper:
     """Scraper para GetOnBoard usando Playwright para JS rendering"""
@@ -314,6 +314,8 @@ class GetOnBoardScraper:
                 if job_body:
                     description = job_body.get_text("\n", strip=True)
 
+            english_required = detect_english_requirement(title, description, location_text)
+
             # Extraer skills/tags
             skills: List[str] = []
             skills_section = soup.find(attrs={"itemprop": "skills"})
@@ -347,6 +349,7 @@ class GetOnBoardScraper:
                 'salary_max': salary_max,
                 'currency': currency,
                 'description': description,
+                'english_required': english_required,
                 'skills': skills if skills else None,
                 'published_at': published_at or datetime.now(),
                 'scraped_at': datetime.now()

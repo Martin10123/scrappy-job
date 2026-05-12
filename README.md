@@ -60,6 +60,11 @@ python run_scraping.py
 
 # Opción 2: API
 curl -X POST "http://127.0.0.1:8000/jobs/scrape/magneto365"
+
+# Opción 3: Front-friendly endpoint
+curl -X POST "http://127.0.0.1:8000/jobs/scrape/run" \
+  -H "Content-Type: application/json" \
+  -d "{\"source\":\"magneto365\",\"search_term\":\"desarrollador\",\"location\":\"colombia\",\"max_pages\":3}"
 ```
 
 ### 6. Ver ofertas
