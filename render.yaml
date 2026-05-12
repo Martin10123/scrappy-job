@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: scrappy-job-api
+    runtime: docker
+    autoDeploy: true
+    healthCheckPath: /
+    envVars:
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: DATABASE_URL
+        sync: false
+
+  - type: cron
+    name: scrappy-job-scrape-every-5h
+    runtime: docker
+    schedule: "0 */5 * * *"
+    dockerCommand: >-
+      sh -c "curl -sS -X POST \"$SCRAPE_API_URL/jobs/scrape/run\" -H \"Content-Type: application/json\" -d '{\"search_term\":[\"desarrollador\",\"frontend\",\"backend\",\"python\",\"react\",\"fullstack\",\"Angular\",\"Laravel\",\"Programacion\",\"Desarrollador mobile\",\"DevOps\",\"Data Science\",\"IA\"],\"location\":\"colombia\",\"max_pages\":3}'"
+    envVars:
+      - key: SCRAPE_API_URL
+        sync: false

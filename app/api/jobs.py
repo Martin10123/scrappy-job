@@ -133,20 +133,6 @@ def _run_scrape_background(task_id: str, source: str, search_term: str, location
         _recompute_task_aggregate(task_id)
 
 
-def _run_scrape_background(source: str, search_term: str, location: str, max_pages: int) -> None:
-    db = get_db_session()
-    try:
-        repository = JobRepository(db)
-        scraping_service = ScrapingService(repository)
-        scraping_service.scrape_and_save_jobs(
-            source=source,
-            search_term=search_term,
-            location=location,
-            max_pages=max_pages,
-        )
-    finally:
-        db.close()
-
 @router.get("/", response_model=list[JobRead])
 def list_jobs(db: Session = Depends(get_db)):
     logger.info("Solicitando lista de jobs")
@@ -246,7 +232,7 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
-@router.post("/scrape/{source}")
+@router.post("/scrape/source/{source}")
 def scrape_jobs(source: str, background_tasks: BackgroundTasks,
                 search_term: str = "desarrollador", location: str = "colombia",
                 max_pages: int = 5, db: Session = Depends(get_db)):

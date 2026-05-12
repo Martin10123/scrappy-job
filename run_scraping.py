@@ -23,7 +23,7 @@ def run_scraping():
         scraping_service = ScrapingService(repository)
 
         # Términos de búsqueda comunes
-        search_terms = ["desarrollador", "frontend", "backend", "python", "react", "Programación", "Desarrollador mobile", "DevOps", "Data Science"]
+        search_terms = ["desarrollador", "frontend", "backend", "python", "react", "fullstack", "Angular", "Laravel", "Programación", "Desarrollador mobile", "DevOps", "Data Science", "IA"]
 
         # Ejecutar scraping de Magneto365
         print("\n🌐 Scrapeando Magneto365...")

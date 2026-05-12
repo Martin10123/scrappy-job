@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
@@ -37,7 +37,7 @@ class JobListResponse(BaseModel):
 
 class ScrapeTriggerRequest(BaseModel):
     source: Optional[str] = None
-    search_term: Optional[str] = "desarrollador"
+    search_term: Optional[Union[str, List[str]]] = "desarrollador"
     location: Optional[str] = "colombia"
     max_pages: Optional[int] = 5
 
@@ -47,7 +47,7 @@ class ScrapeTriggerResponse(BaseModel):
     status_url: str
     message: str
     source: Optional[str]
-    search_term: Optional[str]
+    search_term: Optional[Union[str, List[str]]]
     location: Optional[str]
     max_pages: int
     queued_sources: List[str]

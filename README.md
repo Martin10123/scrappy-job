@@ -59,7 +59,7 @@ Visita `http://127.0.0.1:8000/docs` para la documentación interactiva.
 python run_scraping.py
 
 # Opción 2: API
-curl -X POST "http://127.0.0.1:8000/jobs/scrape/magneto365"
+curl -X POST "http://127.0.0.1:8000/jobs/scrape/source/magneto365"
 
 # Opción 3: Front-friendly endpoint
 curl -X POST "http://127.0.0.1:8000/jobs/scrape/run" \
@@ -71,7 +71,7 @@ curl "http://127.0.0.1:8000/jobs/scrape/status/<task_id>"
 ```
 
 Ejemplo de flujo para front:
-1. Hacer POST a /jobs/scrape/run (o /jobs/scrape/{source}).
+1. Hacer POST a /jobs/scrape/run (o /jobs/scrape/source/{source}).
 2. Leer task_id y status_url de la respuesta.
 3. Hacer polling cada 2-3 segundos a status_url.
 4. Renderizar progress_pct, current_source, processed_jobs/total_jobs y saved_jobs.
@@ -89,3 +89,59 @@ curl "http://127.0.0.1:8000/jobs"
 3. **ETL Pipeline**: Limpiar y normalizar datos
 4. **NLP Skills**: Extraer tecnologías de las descripciones
 5. **Dashboard**: Crear visualización con Streamlit
+
+## Deploy en Render (Docker + job cada 5 horas)
+
+### 1. Subir repositorio a GitHub
+Render despliega directamente desde un repositorio remoto.
+
+### 2. Crear servicios con Blueprint
+Este proyecto ya incluye `render.yaml` para crear:
+
+- Un Web Service (`scrappy-job-api`) para la API FastAPI.
+- Un Cron Job (`scrappy-job-scrape-every-5h`) para disparar scraping cada 5 horas.
+
+En Render:
+
+1. Ir a Dashboard -> New -> Blueprint.
+2. Conectar el repositorio.
+3. Confirmar creación de servicios del `render.yaml`.
+
+### 3. Configurar variable obligatoria del cron
+En el web service, configurar:
+
+- `DATABASE_URL`: cadena de conexión PostgreSQL (Render Postgres, Neon, Supabase, etc.)
+
+En el servicio de cron, configurar:
+
+- `SCRAPE_API_URL`: URL base pública de tu API, por ejemplo `https://scrappy-job-api.onrender.com`
+
+El cron ejecuta:
+
+```bash
+POST /jobs/scrape/run
+```
+
+con payload sin `source`, por lo que ejecuta todas las fuentes configuradas (`magneto365`, `computrabajo`, `getonboard`).
+
+Ademas, el cron envia la lista completa de terminos de busqueda:
+
+- desarrollador
+- frontend
+- backend
+- python
+- react
+- fullstack
+- Angular
+- Laravel
+- Programacion
+- Desarrollador mobile
+- DevOps
+- Data Science
+- IA
+
+### 4. Verificar estado
+
+1. Abrir logs del cron en Render y validar respuesta 200/202.
+2. Revisar logs del web service para confirmar ejecución del scraping.
+3. Consultar endpoint `/jobs` o analytics para validar nuevos registros.
