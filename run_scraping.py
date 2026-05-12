@@ -23,23 +23,20 @@ def run_scraping():
         scraping_service = ScrapingService(repository)
 
         # Términos de búsqueda comunes
-        search_terms = ["desarrollador", "frontend", "backend", "python", "react"]
+        search_terms = ["desarrollador", "frontend", "backend", "python", "react", "Programación", "Desarrollador mobile", "DevOps", "Data Science"]
 
         # Ejecutar scraping de Magneto365
-        # print("\n🌐 Scrapeando Magneto365...")
-        # try:
-        #     saved_magneto = scraping_service.scrape_and_save_jobs(
-        #         source='magneto365',
-        #         search_term=search_terms,
-        #         location='colombia',
-        #         max_pages=3
-        #     )
-        #     print(f"✅ Magneto365: {saved_magneto} ofertas guardadas")
-        # except Exception as e:
-        #     print(f"❌ Error en Magneto365: {e}")
-
-        # search_terms = ["desarrollador", "Programación", "Desarrollador mobile", "DevOps", "Data Science"]
-        search_terms = ["desarrollador"]
+        print("\n🌐 Scrapeando Magneto365...")
+        try:
+            saved_magneto = scraping_service.scrape_and_save_jobs(
+                source='magneto365',
+                search_term=search_terms,
+                location='colombia',
+                max_pages=3
+            )
+            print(f"✅ Magneto365: {saved_magneto} ofertas guardadas")
+        except Exception as e:
+            print(f"❌ Error en Magneto365: {e}")
 
         # Ejecutar scraping de GetOnBoard
         print("\n🌐 Scrapeando GetOnBoard (esto puede tardar un poco)...")

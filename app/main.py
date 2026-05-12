@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -6,17 +7,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.jobs import router as jobs_router
 from app.database import engine, Base
 
+# Cargar variables de ambiente
+load_dotenv()
+
 # Crear las tablas en la base de datos
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="JobTrend AI")
+app = FastAPI(
+    title="JobTrend AI",
+    description="API para análisis de tendencias de empleo en tech",
+    version="1.0.0",
+)
 
-cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()]
+# Configurar CORS
+cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+cors_origins = [origin.strip() for origin in cors_origins if origin.strip()]
+
+print(f"🔓 CORS Origins configurado: {cors_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins or ["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
