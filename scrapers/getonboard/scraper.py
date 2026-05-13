@@ -44,7 +44,7 @@ class GetOnBoardScraper:
         try:
             async with async_playwright() as p:
                 logger.info("Lanzando navegador Chromium...")
-                self.browser = await p.chromium.launch(headless=False, slow_mo=100)  # Modo visible
+                self.browser = await p.chromium.launch(headless=True)
                 logger.info("✅ Navegador lanzado. Creando contexto...")
                 self.context = await self.browser.new_context(
                     viewport={"width": 1920, "height": 1080},
