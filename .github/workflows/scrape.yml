@@ -1,0 +1,16 @@
+name: Scrape Jobs
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # cada hora
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger scrape
+        run: |
+          curl -X POST "${{ secrets.SCRAPE_API_URL }}/jobs/scrape/run" \
+            -H "Content-Type: application/json" \
+            -d '{"search_term":["desarrollador","frontend","backend","python","react","fullstack","Angular","Laravel","Programacion","Desarrollador mobile","DevOps","Data Science","IA"],"location":"colombia","max_pages":1}'
