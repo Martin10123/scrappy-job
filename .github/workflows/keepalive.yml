@@ -1,0 +1,12 @@
+name: Keep Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # cada 10 minutos
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping API
+        run: curl -s "${{ secrets.SCRAPE_API_URL }}/health" > /dev/null
