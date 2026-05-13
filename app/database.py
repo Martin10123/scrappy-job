@@ -22,7 +22,6 @@ DATABASE_URL = os.getenv(
 )
 
 engine = create_engine(DATABASE_URL)
-logger.info(f"Conexión a PostgreSQL configurada en {DB_HOST}:{DB_PORT}/{DB_NAME}")
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
