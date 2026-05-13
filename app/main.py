@@ -40,3 +40,7 @@ app.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
 @app.get("/")
 def root():
     return {"message": "JobTrend AI API"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
