@@ -59,10 +59,11 @@ class GetOnBoardScraper:
                     try:
                         # Navegar a la página de búsqueda
                         logger.info(f"📄 Navegando a {self.jobs_url}...")
-                        await page.goto(self.jobs_url, wait_until="networkidle", timeout=30000)
+                        # FIX: domcontentloaded es más rápido y confiable que networkidle
+                        # FIX: timeout aumentado a 60s para plan Free de Render
+                        await page.goto(self.jobs_url, wait_until="domcontentloaded", timeout=60000)
+                        await page.wait_for_timeout(3000)  # Esperar 3s para estabilizar JS
                         logger.info("✅ Página cargada.")
-                        logger.info("⏳ Esperando 3 segundos para estabilizar...")
-                        await asyncio.sleep(3)  # Esperar 3 segundos para estabilizar
 
                         # Rellenar el formulario de búsqueda
                         logger.info(f"🔤 Buscando elemento input #search_term...")
@@ -75,7 +76,7 @@ class GetOnBoardScraper:
                         logger.info("🔎 Presionando Enter...")
                         await search_input.press("Enter")
                         logger.info("⏳ Esperando 5 segundos para que carguen resultados...")
-                        await asyncio.sleep(5)  # Esperar 5 segundos para que carguen resultados
+                        await asyncio.sleep(5)
                         logger.info("✅ Resultados esperados.")
 
                         # Extraer ofertas de múltiples páginas
@@ -187,7 +188,6 @@ class GetOnBoardScraper:
                         job_url = self.base_url + job_url
 
                     logger.info(f"  [{idx+1}] 🔗 Extrayendo detalle de: {job_url[:80]}...")
-                    # Extraer datos básicos del card
                     job_data = await self._extract_job_detail(job_url)
 
                     if job_data and job_data.get("title"):
@@ -214,9 +214,11 @@ class GetOnBoardScraper:
             logger.debug(f"    🌐 Abriendo nueva página para: {job_url[:60]}...")
             detail_page = await self.context.new_page()
             logger.debug(f"    ⏳ Navegando a {job_url[:60]}...")
-            await detail_page.goto(job_url, wait_until="networkidle", timeout=30000)
-            logger.debug(f"    ✅ Página cargada. Esperando 3 segundos...")
-            await asyncio.sleep(3)  # Esperar 3 segundos para que cargue completamente
+            # FIX: domcontentloaded en lugar de networkidle — mucho más rápido y estable
+            # FIX: timeout aumentado a 60s para tolerar lentitud del plan Free
+            await detail_page.goto(job_url, wait_until="domcontentloaded", timeout=60000)
+            await detail_page.wait_for_timeout(2000)  # 2s para que renderice el contenido JS
+            logger.debug(f"    ✅ Página cargada.")
             logger.debug(f"    📄 Extrayendo HTML...")
 
             # Obtener HTML de la página de detalle
@@ -242,20 +244,16 @@ class GetOnBoardScraper:
             city = None
             work_mode = None
             
-            # Buscar elemento de ubicación (jobLocation)
             location_elem = soup.find(attrs={"itemprop": "address"})
             if location_elem:
                 location_text = normalize_location_text(location_elem.get_text(" ", strip=True))
                 city = extract_city_from_location(location_text)
             
-            # Extraer modalidad de trabajo de diferentes fuentes en GetOnBoard
-            # 1. Buscar en el elemento jobLocation que puede contener "(Remoto)", "(Híbrido)", etc.
             job_location = soup.find(attrs={"itemprop": "jobLocation"})
             if job_location and not work_mode:
                 location_full_text = job_location.get_text(" ", strip=True)
                 work_mode = detect_work_mode(location_full_text, None)
             
-            # 2. Buscar específicamente span con ícono de wifi (significa Remoto)
             if not work_mode:
                 wifi_icon = soup.find("i", class_=lambda x: x and "icon-wifi" in x if x else False)
                 if wifi_icon:
@@ -265,7 +263,6 @@ class GetOnBoardScraper:
                         if "remoto" in text or "remote" in text:
                             work_mode = "remote"
             
-            # 3. Buscar en location-tooltip-content que puede contener info de modalidad
             if not work_mode:
                 tooltip = soup.find(class_=lambda x: x and "location-tooltip-content" in x if x else False)
                 if tooltip:
@@ -278,7 +275,6 @@ class GetOnBoardScraper:
             if employment_elem:
                 employment_type = employment_elem.get("content", employment_elem.get_text(strip=True))
             
-            # Fallback: si aún no hay work_mode, usar el método anterior
             if not work_mode:
                 work_mode = detect_work_mode(location_text, employment_type)
 
@@ -287,7 +283,6 @@ class GetOnBoardScraper:
             salary_elem = soup.find(attrs={"itemprop": "baseSalary"})
             if salary_elem:
                 salary_text = salary_elem.get_text(strip=True)
-                # Buscar patrón de salario "$X - $Y"
                 numbers = re.findall(r"\$?([\d.,]+)", salary_text)
                 if len(numbers) >= 2:
                     try:
@@ -295,11 +290,10 @@ class GetOnBoardScraper:
                         salary_max = int(numbers[1].replace(",", "").replace(".", ""))
                     except ValueError:
                         pass
-                # Detectar moneda
                 if "USD" in salary_text:
                     currency = "USD"
                 elif "$" in salary_text and "COP" not in salary_text:
-                    currency = "USD"  # GetOnBoard es principalmente USD
+                    currency = "USD"
                 else:
                     currency = "USD"
 
@@ -309,7 +303,6 @@ class GetOnBoardScraper:
             if desc_elem:
                 description = desc_elem.get_text("\n", strip=True)
             else:
-                # Alternativa: buscar por id
                 job_body = soup.find(id="job-body")
                 if job_body:
                     description = job_body.get_text("\n", strip=True)

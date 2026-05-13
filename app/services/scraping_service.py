@@ -5,7 +5,6 @@ from app.logger import logger
 from app.models.job import Job
 from app.repositories.job_repository import JobRepository
 from app.services.job_normalizer import normalize_skills
-from scrapers.computrabajo.scraper import ComputrabajoScraper
 from scrapers.magneto.scraper import MagnetoScraper
 from scrapers.getonboard.scraper import run_getonboard_scraper
 
@@ -16,7 +15,6 @@ class ScrapingService:
         self.repository = repository
         self.scrapers = {
             'magneto365': MagnetoScraper(),
-            'computrabajo': ComputrabajoScraper(),
             'getonboard': None,  # GetOnBoard usa async, se llama diferente
         }
 
@@ -32,9 +30,9 @@ class ScrapingService:
         Scrape ofertas y las guarda en la base de datos
 
         Args:
-            source: Fuente del scraper ('magneto365', 'computrabajo', 'getonboard')
+            source: Fuente del scraper ('magneto365', 'getonboard')
             search_term: Término(s) de búsqueda (str o list)
-            location: Ubicación (solo para magneto365/computrabajo)
+            location: Ubicación (solo para magneto365)
             max_pages: Número máximo de páginas a scrapear
 
         Returns:
@@ -64,7 +62,7 @@ class ScrapingService:
                 search_term = [search_term]
             raw_jobs = run_getonboard_scraper(search_terms=search_term, max_pages=max_pages)
         else:
-            # Magneto365 y ComputraBajo usan sync
+            # Magneto365 usa sync
             scraper = self.scrapers[source]
             raw_jobs = scraper.get_jobs(search_term=search_term, location=location, max_pages=max_pages)
 

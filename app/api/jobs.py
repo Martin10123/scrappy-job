@@ -299,7 +299,7 @@ def trigger_scrape(
     db: Session = Depends(get_db),
 ):
     """Endpoint para que el front dispare scraping con un click."""
-    queued_sources = [payload.source] if payload.source else ["magneto365", "computrabajo", "getonboard"]
+    queued_sources = [payload.source] if payload.source else ["magneto365", "getonboard"]
 
     logger.info(
         "Disparando scraping desde el front: "

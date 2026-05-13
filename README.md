@@ -85,7 +85,7 @@ curl "http://127.0.0.1:8000/jobs"
 ## Próximos pasos
 
 1. **Ajustar scraper**: Inspeccionar HTML de Magneto365 y actualizar selectores en `scrapers/magneto/scraper.py`
-2. **Añadir Computrabajo**: Crear scraper similar para otra fuente
+2. **Añadir otra fuente**: Crear scraper similar para otra fuente (opcional)
 3. **ETL Pipeline**: Limpiar y normalizar datos
 4. **NLP Skills**: Extraer tecnologías de las descripciones
 5. **Dashboard**: Crear visualización con Streamlit
@@ -122,7 +122,7 @@ El cron ejecuta:
 POST /jobs/scrape/run
 ```
 
-con payload sin `source`, por lo que ejecuta todas las fuentes configuradas (`magneto365`, `computrabajo`, `getonboard`).
+con payload sin `source`, por lo que ejecuta todas las fuentes configuradas (`magneto365`, `getonboard`).
 
 Ademas, el cron envia la lista completa de terminos de busqueda:
 
